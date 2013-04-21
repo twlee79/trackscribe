@@ -21,16 +21,33 @@ body {
 <script type="text/javascript"
 	src="https://maps.googleapis.com/maps/api/js?libraries=geometry&key=AIzaSyCcUEAW1DD7QfJYDm8rD1dzAQd1T-vbuSI&sensor=false">
     </script>
-<script type="text/javascript"
-    	src="TrackScribeMain.js">
+<script type="text/javascript" src="TrackScribeControls.js">
     </script>
-</head>
-<body>
-	<div id="map-canvas" />
-</body>
-<title>Insert title here</title>
-</head>
-<body>
+<script type="text/javascript" src="TrackScribeMain.js">
+    </script>
+<link rel="stylesheet" type="text/css" href="TrackScribe.css" />  
 
+<title>TrackScribe</title>
+</head>
+<body>
+	<div id="map-canvas"> </div>
+
+	<div id="dummyDiv" style="display:none">
+		<div class="controlContainer" id="toolPalette">
+			<div class="controlElement controlElementInactive" id="dragTool" title="Move map">
+				<img src="handdrag.png" height=25em>
+			</div>
+			<div class="controlElement controlElementInactive" id="manualTool"
+				title="Manually add points">
+				<img src="point2point.png" height=25em>
+			</div>
+			<div class="controlElement controlElementInactive" id="routeTool"
+				title="Auto-route to point">
+				<img src="route.png" height=25em>
+			</div>
+		</div>
+	</div>
+	
+	<div class="controlElement controlElementActive" id="dummyActiveElement" style="display:none"></div>
 </body>
 </html>
