@@ -1,4 +1,11 @@
 
+var TSEditModes = {
+		DRAG : { value: 0, name: ""},
+		ADD_MANUALNODE : { value: 1, name: "Click to add a new point"},
+		ADD_MANUALPOINT : { value: 2, name: "Click to add a new auto-route point"},
+		ADD_ROUTENODE : { value: 3, name: "Click to add a new step"}
+};
+
 
 TSControl = function() {
 };
@@ -10,13 +17,11 @@ TSControl.prototype.initialize  = function (id) {
 		this.theControl = id;
 	}
 	
-	// store orig styles for turning them off
-	this.origFontWeight = this.theControl.style.fontWeight;
-	this.origColor = this.theControl.style.color;
-	this.origBackgroundColor = this.theControl.style.backgroundColor;
-	this.origBackgroundImage= this.theControl.style.backgroundImage;
+	// for changing appearance
+	this.origClassName = this.theControl.className; // store orig className
+	this.activeClassName = document.getElementById("dummyActiveElement").className;
 	
-	tsMain.map.controls[google.maps.ControlPosition.BOTTOM_LEFT].push(this.theControl);
+	tsMain.map.controls[google.maps.ControlPosition.RIGHT_TOP].push(this.theControl);
 	
 	// install listeners
 	var that = this; // for use in closures
@@ -27,15 +32,9 @@ TSControl.prototype.initialize  = function (id) {
 
 TSControl.prototype.setActiveSyle = function(status) {
 	if (status == true) { //ON
-		this.theControl.style.fontWeight = "bold";
-		this.theControl.style.color = "rgb(255, 0, 0)";
-		this.theControl.style.backgroundColor = "lightgray";
-		this.theControl.style.backgroundImage = "-webkit-linear-gradient(top, white, lightgray)";
+		this.theControl.className = this.activeClassName;
 	} else { //OFF
-		this.theControl.style.fontWeight = this.origFontWeight;
-		this.theControl.style.color = this.origColor;
-		this.theControl.style.backgroundColor = this.origBackgroundColor;
-		this.theControl.style.backgroundImage = this.origBackgroundImage; 
+		this.theControl.className = this.origClassName; 
 	}
 };
 
@@ -67,8 +66,23 @@ DragControl.prototype.handleClick = function() {
 
 ManualControl = function(id){this.initialize(id);};
 ManualControl.prototype = new TSControl();
-ManualControl.prototype.handleClick = function() {
-	alert("Manual!");
+ManualControl.prototype.handleClick = function(mouseEvent) {
+	var latLng = mouseEvent.latLng;
+	var typeAdded = tsMain.pointList.addNode(latLng,that.map);
+		
+	if (typeAdded == TSNodeTypes.HOME) {
+		// first node added
+	} else {
+		// already have home, switch to add point mode.
+		that.setMode(TSEditModes.ADD_MANUALPOINT);
+	}
+
+	// todo: check if appropriate to add point?
+	this.clickListener = google.maps.event.addListener(this.map, 'click', function(mouseEvent) {
+		var latLng = mouseEvent.latLng;
+		that.pointList.addPoint(latLng);
+	});
+
 };
 
 RouteControl = function(id){this.initialize(id);};
@@ -85,8 +99,8 @@ TSControls = function () {
 };
 
 TSControls.prototype.initialize = function() {
-	this.dragControl = new DragControl("dragTool");
-	this.manualControl = new ManualControl("manualTool");
-	this.routeControl = new RouteControl("routeTool");
+	this.dragControl = new DragControl("toolPalette");
+	//this.manualControl = new ManualControl("manualTool");
+	//this.routeControl = new RouteControl("routeTool");
 	this.dragControl.activate();
 };
