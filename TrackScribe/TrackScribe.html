@@ -34,18 +34,34 @@ body {
 <body>
 	<div id="map-canvas"> </div>
 
-	<div id="dummyDiv" style="display:none">
+	<div id="dummyDiv">
 		<div class="controlContainer" id="toolPalette">
 			<div class="controlElement controlElementInactive" id="dragTool" title="Move map">
 				<img src="handdrag.png" height=25em>
 			</div>
-			<div class="controlElement controlElementInactive" id="manualTool"
-				title="Manually add points">
+			<div class="controlElement controlElementInactive" id="manualPointTool"
+				title="Manually add points to path">
 				<img src="point2point.png" height=25em>
 			</div>
+			<div class="controlElement controlElementInactive" id="manualNodeTool"
+				title="Manually add a new step">
+				<img src="point2node.png" height=25em>
+			</div>
 			<div class="controlElement controlElementInactive" id="routeTool"
-				title="Auto-route to point">
+				title="Auto-route path to point">
 				<img src="route.png" height=25em>
+			</div>
+		</div>
+	</div>
+	
+	<div id="dummyDiv" style="display:none">
+		<div class="controlContainerHorizontal" id="statusBar" style="width:90%;  padding-bottom: 3.5ex">
+			<div style="display:table-row">
+				<div id="distance" class="controlElement controlElementBasic controlSideBySide" style="width:10%; min-width:6em; font-weight:bold; font-size:150%">
+					0.0 km
+				</div>
+				<div id="info" class="controlElement controlElementBasic controlSideBySide" style="text-align:left;">
+				</div>
 			</div>
 		</div>
 	</div>

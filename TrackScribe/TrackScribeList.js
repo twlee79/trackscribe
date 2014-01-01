@@ -9,7 +9,9 @@
 
 var TSNodeTypes = {
 		HOME: {value: 1, name: "Home node"},
-		MANUAL: {value: 2, name: "Manual node"}
+		MANUAL: {value: 2, name: "Manual node"},
+		ROUTED: {value: 3, name: "Routed node"},
+		PATH: {value: 4, name: "Path point"}
 };
 
 var TSError = {
@@ -27,7 +29,7 @@ TSNode = function (type, latLng) {
 	this.marker = null;
 	this.polyline = null;
 	
-	// for linked=list
+	// for linked-list
 	this.previous = null; // use setPrevious to set
 	this.next = null;
 };
@@ -55,11 +57,15 @@ TSNode.prototype.getTerminus = function() {
 
 TSNode.prototype.addPoint = function(latLng) {
 	if (this.type==TSNodeTypes.DUMMY) throw TSError.INVALIDNODE;
-	return this.path.push(latLng); 
+	var newLength= this.path.push(latLng);
+	if (this.marker) this.marker.setPosition(this.getTerminus());
+	return newLength; 
 };
 
 
-TSNode.prototype.addOverlays = function(map) {
+TSNode.prototype.addOverlays = function() {
+	
+	theMap = tsMain.map
 	
 	 // remove and invalid any previous overlays
 	if (this.marker) marker.setMap(null);
@@ -67,19 +73,31 @@ TSNode.prototype.addOverlays = function(map) {
 	this.marker = null;
 	this.polyline = null;
 	
+	var arrowSymbol = {
+	    path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW
+	};
+	
 	var markerOptions = {
 		position : this.getTerminus(),
 		draggable : true,
-		map : map,
+		map : theMap,
+		zIndex : 100,
 	};
 	var polylineOptions = {
 		path : this.path,
 		strokeColor : "skyblue",
 		strokeOpacity : 1.0,
 		strokeWeight : 2,
-		map : map,
+		map : theMap,
 		editable : true,
+		zIndex : 90,
+		icons : [ 
+		          {	icon : arrowSymbol, offset : '10%'},
+		          {	icon : arrowSymbol, offset : '90%'}
+		]
 	};
+	
+	
 	
 	switch (this.type) {
 		case TSNodeTypes.HOME:
@@ -98,8 +116,8 @@ TSNode.prototype.addOverlays = function(map) {
 			break;
 		case TSNodeTypes.MANUAL:
 			markerOptions.icon = {
-					path : google.maps.SymbolPath.CIRCLE,
-					scale : 5,
+					path : 'M 1.1,1.1 1.1,-1 -1,-1 -1,1.1 z',
+					scale : 6,
 					fillColor : "skyblue",
 					fillOpacity : 1.0,
 					strokeColor : "skyblue",
@@ -126,28 +144,37 @@ TSList = function () {
 	this.tail = null;
 };
 
-TSList.prototype.addNode = function(latLng, map) {
+
+TSList.prototype.addManualPoint = function(latLng, forceNewNode) {
+	var theMap = tsMain.map;
 	var type = null;
 	var node = null;
-	if (this.head == null) {
+	if (this.head == null) { // any points so far?
+		// no
 		// first node is 'home' node
 		type = TSNodeTypes.HOME;
 		node = new TSNode(type, latLng);
 		this.head = node;
 		this.tail = node;
 	} else {
-		type = TSNodeTypes.MANUAL;
-		node = new TSNode(type, latLng);
-		var oldTail = this.tail;
-		oldTail.next = node;
-		node.setPrevious(oldTail);
-		this.tail = node;
+		// yes there are some points
+		if (!forceNewNode && this.tail.type == TSNodeTypes.MANUAL) { // was last node a manual node?
+			// add a new point to that node
+			type = TSNodeTypes.PATH;
+			this.tail.addPoint(latLng);
+		} else {
+			// no, make a new node
+			type = TSNodeTypes.MANUAL;
+			node = new TSNode(type, latLng);
+			var oldTail = this.tail;
+			oldTail.next = node;
+			node.setPrevious(oldTail);
+			this.tail = node;
+			
+		}
 	}
-	node.addOverlays(map);
+	
+	if (node) node.addOverlays(theMap);
 	return type; // return type, may be 'home'
-};
 
-TSList.prototype.addPoint = function(latLng) {
-	this.tail.addPoint(latLng);
 };
-

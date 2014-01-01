@@ -17,11 +17,28 @@ TSMain.prototype.initialize = function() {
 
 function initialize() {
 	tsMain.initialize();
-	tsControls.initialize();
+	tsDrawControls.initialize("toolPalette",google.maps.ControlPosition.RIGHT_TOP);
+	tsDrawControls.addControl("dragTool",TSControl, true);
+	tsDrawControls.addControl("manualPointTool",ManualPointControl, true);
+	tsDrawControls.addControl("manualNodeTool",ManualNodeControl, true);
+	tsDrawControls.addControl("routeTool",TSControl, true);
+	
+	tsStatusBar.initialize("statusBar",google.maps.ControlPosition.BOTTOM);
+	tsDistanceCtrl = tsDrawControls.addControl("distance",TSControl, false);
+	tsInfoCtrl = tsDrawControls.addControl("info",TSControl, false);
+	
+	tsDrawControls.controls[0].activate();
+
 }
 
 
 var tsMain = new TSMain();
-var tsControls = new TSControls();
+var tsDrawControls = new TSControlContainer();
+var tsStatusBar = new TSStatusBar();
+var tsDistanceCtrl = null;
+var tsInfoCtrl = null;
 
 google.maps.event.addDomListener(window, 'load', initialize);
+
+
+

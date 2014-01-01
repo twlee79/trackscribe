@@ -8,6 +8,20 @@
 	right: 0px; top: 0px; /* forces align to right, and top */
 	z-index: 0;
 }
+
+.controlContainerHorizontal
+{
+	margin: 5px; 
+	position: absolute; 
+	cursor: pointer; 
+	z-index: 0;
+	display: table;
+}
+.controlSideBySide
+{
+	/*float: left;*/
+	display: table-cell;
+}
 .controlElement
 {
 	min-width: 3em;
@@ -47,6 +61,7 @@
 	background-position: initial initial;
 	background-repeat: initial initial; */
 }
+
 .controlElementInactive
 {
 	font-weight: normal;
@@ -59,4 +74,10 @@
 	font-weight: bold;
 	background-color: lightgray;
 	background-image: -webkit-linear-gradient(top, white, lightgray);
+}
+
+.controlElementBasic
+{
+	background-color: white;
+	
 }
