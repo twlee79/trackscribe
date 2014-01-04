@@ -20,11 +20,13 @@ var tsMain = {
 		    styles: tsStyles 
 		},
 	map : null,
+	directionsService : null,
 };
 
 tsMain.initialize = function() {
 	this.map = new google.maps.Map(document.getElementById("map-canvas"),
 			this.mapOptions);
+	this.directionsService = new google.maps.DirectionsService();
 };
 
 function tsInitialize() {

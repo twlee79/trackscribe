@@ -128,10 +128,10 @@ tsControl.setActiveSyle = function(status) {
 	if (status == true) { //ON
 		this.theControl.className = this.activeClassName;
 		if (this.theControl.title)
-			tsInfoCtrl.theControl.innerHTML = this.theControl.title; 
+			tsTipsCtrl.setHTML(this.theControl.title); 
 	} else { //OFF
 		this.theControl.className = this.origClassName; 
-		tsInfoCtrl.theControl.innerHTML = "";
+		tsTipsCtrl.setHTML("");
 	}
 };
 
@@ -186,14 +186,30 @@ tsManualNodeCtrl.installMapListeners = function() {
 var tsDragCtrl = Object.create(tsControl);
 var tsRouteCtrl = Object.create(tsControl);
 
-var tsDistanceCtrl = Object.create(tsControl);
+tsRouteCtrl.installMapListeners = function() {
+	var that = this; // for use in closures
+	this.owner.mapClickListener = google.maps.event.addListener(tsMain.map, 'click', function(mouseEvent) {
+		
+		var latLng = mouseEvent.latLng;
+		tsPointList.addRoutedPoint(latLng);
+	});
+};
+
+var tsStatusCtrl = Object.create(tsControl);
+tsStatusCtrl.setHTML = function(html) {
+	this.theControl.innerHTML = html;
+}; 
+
+var tsDistanceCtrl = Object.create(tsStatusCtrl);
 
 tsDistanceCtrl.update = function(distance) {
 	this.theControl.innerHTML = distance.toFixed(1) + " km";
 	
 };
 
-var tsInfoCtrl = Object.create(tsControl);
+
+var tsTipsCtrl = Object.create(tsStatusCtrl);
+var tsInfoCtrl = Object.create(tsStatusCtrl);
 
 
 function tsInitializeControls() {
@@ -204,8 +220,9 @@ function tsInitializeControls() {
 	tsDrawControls.addControl("routeTool",tsRouteCtrl, true);
 	
 	tsStatusBar.initialize("statusBar",google.maps.ControlPosition.BOTTOM);
-	tsDistanceCtrl = tsDrawControls.addControl("distance",tsDistanceCtrl, false);
-	tsInfoCtrl = tsDrawControls.addControl("info",tsInfoCtrl, false);
+	tsDrawControls.addControl("distance",tsDistanceCtrl, false);
+	tsDrawControls.addControl("tips",tsTipsCtrl, false);
+	tsDrawControls.addControl("info",tsInfoCtrl, false);
 	
 	tsDrawControls.controls[1].activate();
 

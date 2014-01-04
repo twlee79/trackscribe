@@ -8,10 +8,11 @@
  */
 
 var tsNodeTypes = {
-		HOME: {value: 1, name: "Home node"},
-		MANUAL: {value: 2, name: "Manual node"},
-		ROUTED: {value: 3, name: "Routed node"},
-		PATH: {value: 4, name: "Path point"}
+		HOME: {value: 1, name: "Home node", color : "darkblue"},
+		MANUAL: {value: 10, name: "Manual node", color : "skyblue"},
+		PATH: {value: 11, name: "Path point"},
+		TOROUTE: {value: 20, name: "Node to route", color : "mediumblue"},
+		ROUTED: {value: 21, name: "Routed node", color : "mediumblue"},
 };
 
 var tsError = {
@@ -23,11 +24,13 @@ var tsNode = {
 	// data
 	type : null,
 	path : null,
-	totalLength : 0,
+	pathLength : 0,
+	cumulLength : 0,
 	
 	// for overlays
 	marker : null,
 	polyline : null,
+	kmMarkers : null,
 	
 	// for linked-list
 	previous : null, // use setPrevious to set
@@ -42,14 +45,52 @@ tsNode.initialize  = function (type, latLng) {
 };
 
 tsNode.calculateLength = function() {
-	this.totalLength = 0;
+	var prevNodeCumulLength = 0;
+	if (this.previous) prevNodeCumulLength = this.previous.cumulLength;
+	this.pathLength = 0;
+	var lastPointCumulLength = prevNodeCumulLength;
+	var markerEvery = 1000.0; // metres
+	this.clearKmMarkers();
 	if (this.path) {
 		for (var i = 1; i < this.path.getLength(); i++) {
-			this.totalLength += tsComputeDistBtw(
-					this.path.getAt(i-1), this.path.getAt(i));
+			var latLng1 = this.path.getAt(i-1);
+			var latLng2 = this.path.getAt(i);
+			this.pathLength += tsComputeDistBtw(latLng1, latLng2);
+			var curPointCumulLength = this.pathLength + prevNodeCumulLength;
+			var lastFloorKm = Math.floor(lastPointCumulLength/markerEvery);
+			var curFloorKm = Math.floor(curPointCumulLength/markerEvery);
+			
+			// do we need to add a km marker?
+			while (lastFloorKm<curFloorKm) {
+				// look for all transitions in floor after dividing by markerEvery length e.g. 2>4 km, need markers for 3,4 
+				lastFloorKm = lastFloorKm+1;
+				
+				var kmMarkerLatLng = tsComputeOffset(latLng1, latLng2, lastFloorKm*markerEvery-lastPointCumulLength);
+				var kmMarkerImage = "markers/marker_"+lastFloorKm+".png";
+				var kmMarkerOptions = {
+					position : kmMarkerLatLng,
+					map : tsMain.map,
+					icon: kmMarkerImage,
+				};
+				if (!this.kmMarkers) this.kmMarkers = [];
+				this.kmMarkers.push(new google.maps.Marker(kmMarkerOptions));
+				
+			}
+			lastPointCumulLength = curPointCumulLength;
 		}
 	}
-	this.owner.calculateLength(); // update length of owning list
+	this.cumulLength = prevNodeCumulLength + this.pathLength;
+	if (this.next) this.next.calculateLength(); // update next length
+	else this.owner.calculateLength(); // terminus update length of owning list
+};
+
+tsNode.clearKmMarkers = function() {
+	if (this.kmMarkers) {
+		for (var i = 0; i < this.kmMarkers.length; i++) {
+			this.kmMarkers[i].setMap(null);
+		}
+		this.kmMarkers.length = 0; // clear array
+	}
 };
 
 /**
@@ -66,8 +107,27 @@ tsNode.setPrevious = function(prevNode) {
  */
 tsNode.updateTerminus = function(latLng) {
 	this.path.setAt(this.path.getLength()-1,latLng);
-	if (this.next) this.next.path.setAt(0,latLng);
+	this.updatePosition();
+	if (this.next) {
+		this.next.path.setAt(0,latLng);
+		this.next.updatePosition(); 
+	}
 	this.calculateLength();
+};
+
+tsNode.updatePosition = function() {
+	if (this.type==tsNodeTypes.TOROUTE || this.type==tsNodeTypes.ROUTED ) {
+		this.type = tsNodeTypes.TOROUTE;
+		this.clearOverlays();
+		var origin = this.path.getAt(0);
+		var terminus = this.path.pop();
+		this.path.clear();
+		this.path.push(origin);
+		this.path.push(terminus);
+		this.autoRoute();
+		this.addOverlays();
+	}
+
 };
 
 
@@ -83,19 +143,67 @@ tsNode.addPoint = function(latLng) {
 	return newLength; 
 };
 
+tsNode.autoRoute = function() {
+	// todo: CHECK if path is valid?
+	var request = {
+		origin : this.path.getAt(0),
+		destination : this.path.getAt(1),
+		provideRouteAlternatives : false,
+		travelMode : google.maps.TravelMode.WALKING
+	};
+	var that = this;
+	tsMain.directionsService.route(request, function(response, status) {
+		if (status == google.maps.DirectionsStatus.OK) {
+			that.clearOverlays();
+			var origin = that.path.getAt(0);
+			that.path.clear();
+			var theRoute = response.routes[0];
+			var theRouteLeg = theRoute.legs[0];
+			if (!theRouteLeg.start_location.equals(origin)) that.path.push(origin); 
+				// start_location may not equal origin due to 'rounding' to nearest road
+				// add origin if needed
+			var theSteps = theRouteLeg.steps;
+			for (var i = 0; i<theSteps.length; i++) {
+				var stepPath = theSteps[i].path;
+				for (var j = 0; j<stepPath.length; j++) {
+					
+					that.path.push(stepPath[j]);
+					
+				};
+				
+			}
+			tsInfoCtrl.setHTML (theRoute.warnings+"<BR>"+theRoute.copyrights);
+			
+			that.type = tsNodeTypes.ROUTED;
+			that.addOverlays(theMap);
+
+		
+		};
+	});
+};
+
+tsNode.clearOverlays = function() {
+	 // remove and invalidate any previous overlays
+	if (this.marker) this.marker.setMap(null);
+	if (this.polyline) this.polyline.setMap(null);
+	this.marker = null;
+	this.polyline = null;
+};
 
 tsNode.addOverlays = function() {
 	
 	theMap = tsMain.map;
 	
-	 // remove and invalid any previous overlays
-	if (this.marker) marker.setMap(null);
-	if (this.polyline) marker.setMap(null);
-	this.marker = null;
-	this.polyline = null;
+	this.clearOverlays();
 	
 	var arrowSymbol = {
-	    path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW
+	    path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+	    scale : 3,
+		strokeOpacity : 1.0,
+		strokeWeight : 2.0,
+		strokeColor : this.type.color,
+		fillColor : this.type.color,
+		fillOpacity : 1.0,
 	};
 	
 	var markerOptions = {
@@ -104,13 +212,20 @@ tsNode.addOverlays = function() {
 		map : theMap,
 		zIndex : 100,
 	};
-	var polylineOptions = {
-		path : this.path,
-		strokeColor : "skyblue",
+	markerOptions.icon = {
+		path : tsSquareSVG,
+		scale : 6,
+		strokeColor : this.type.color,
 		strokeOpacity : 1.0,
-		strokeWeight : 2,
+		strokeWeight : 1.0,
+		fillColor : this.type.color,
+		fillOpacity : 1.0,
+	};
+	var polylineOptions	= {
+		path : this.path,
 		map : theMap,
-		editable : true,
+		strokeColor : this.type.color,
+		strokeWeight : 2.0,
 		zIndex : 90,
 		icons : [ 
 		          {	icon : arrowSymbol, offset : '10%'},
@@ -122,50 +237,67 @@ tsNode.addOverlays = function() {
 	
 	switch (this.type) {
 		case tsNodeTypes.HOME:
-			markerOptions.icon = {
-				// convert SVG polygons to path with http://readysetraphael.com/
-				// ensure centred around origin
-					path : 'M 0,-70.866 -70.866,0 -42.52,0 -42.52,70.866 42.52,70.866 42.52,0 70.866,0 42.518,-28.349 42.52,-56.693 28.347,-56.692 28.348,-42.519 z',
-					scale : 0.15,
-					fillColor : "darkblue",
-					fillOpacity : 1.0,
-					strokeColor : "darkblue",
-					strokeOpacity : 1.0,
-					strokeWeight : 1.0,
-				};
+			markerOptions.icon.path = tsHouseSVG;
+			markerOptions.icon.scale = 0.15;
+
 			polylineOptions = null; // no polyline for home
 			break;
+		case tsNodeTypes.TOROUTE:
+			var dottedLineSymbol = {
+				path : tsDottedSVG,
+				strokeOpacity : 1.0,
+				strokeColor : this.type.color,
+				scale : 4.0
+			};
+			
+			polylineOptions.icons.push({
+				icon : dottedLineSymbol,
+				offset : '0',
+				repeat : '20px'
+			});
+			
+			polylineOptions.strokeOpacity = 0.0;
+			polylineOptions.editable = false;
+			
+			break;
+		case tsNodeTypes.ROUTED:
+			polylineOptions.strokeOpacity = 1.0;
+			polylineOptions.editable = false;
+			
+			break;
 		case tsNodeTypes.MANUAL:
-			markerOptions.icon = {
-					path : 'M 1.1,1.1 1.1,-1 -1,-1 -1,1.1 z',
-					scale : 6,
-					fillColor : "skyblue",
-					fillOpacity : 1.0,
-					strokeColor : "skyblue",
-					strokeOpacity : 1.0,
-					strokeWeight : 1.0,
-				};
+			polylineOptions.strokeOpacity = 1.0;
+			polylineOptions.editable = true;
+			
 			break;
 	}
 	if (polylineOptions) {
 		this.polyline = new google.maps.Polyline(polylineOptions);
-		var that = this;
-		var pathEdited = function(mouseEvent) {
-			that.calculateLength();
-		};
-		google.maps.event.addListener(this.polyline, "dragend", pathEdited);
-        google.maps.event.addListener(this.polyline.getPath(), "insert_at", pathEdited);
-        google.maps.event.addListener(this.polyline.getPath(), "remove_at", pathEdited);
-        google.maps.event.addListener(this.polyline.getPath(), "set_at", pathEdited);		
+		this.addPolylineListeners();
 	}
 	if (markerOptions) {
 		this.marker = new google.maps.Marker(markerOptions);
-		var that = this;
-		google.maps.event.addListener(this.marker, 'dragend', function(mouseEvent) {
-			var latLng = mouseEvent.latLng;
-			that.updateTerminus(latLng);
-			});
+		this.addMarkerListeners();
 	}
+};
+
+tsNode.addPolylineListeners = function() {
+	var that = this;
+	var pathEdited = function(mouseEvent) {
+		that.calculateLength();
+	};
+	google.maps.event.addListener(this.polyline, "dragend", pathEdited);
+    google.maps.event.addListener(this.polyline.getPath(), "insert_at", pathEdited);
+    google.maps.event.addListener(this.polyline.getPath(), "remove_at", pathEdited);
+    google.maps.event.addListener(this.polyline.getPath(), "set_at", pathEdited);		
+};
+
+tsNode.addMarkerListeners = function() {
+	var that = this;
+	google.maps.event.addListener(this.marker, 'dragend', function(mouseEvent) {
+		var latLng = mouseEvent.latLng;
+		that.updateTerminus(latLng);
+		});
 };
 
 
@@ -173,23 +305,23 @@ tsNode.addOverlays = function() {
 var tsPointList = {
 	head : null,
 	tail : null,
-	totalLength : 0,
+	pathLength : 0,
 };
 tsNode.owner = tsPointList; // only one list for so all nodes belong to it 
 
 tsPointList.calculateLength = function() {
 	var node = this.head;
-	this.totalLength = 0;
+	this.pathLength = 0;
 	while (node!=null) {
-		this.totalLength += node.totalLength;
+		this.pathLength += node.pathLength;
 		node = node.next;
 	}
-	tsDistanceCtrl.update(this.totalLength/1000.0);
+	tsDistanceCtrl.update(this.pathLength/1000.0);
 	
 };
 
 
-tsPointList.addManualPoint = function(latLng, forceNewNode) {
+tsPointList.addPoint = function(latLng, addType) {
 	var theMap = tsMain.map;
 	var type = null;
 	var node = null;
@@ -203,8 +335,22 @@ tsPointList.addManualPoint = function(latLng, forceNewNode) {
 		this.tail = node;
 	} else {
 		// yes there are some points
-		if (!forceNewNode && this.tail.type == tsNodeTypes.MANUAL) { // was last node a manual node?
-			// add a new point to that node
+		if (addType==tsNodeTypes.TOROUTE) {
+			// are we adding a routed point?
+			type = tsNodeTypes.TOROUTE;
+			node = Object.create(tsNode);
+			node.initialize(type, latLng);
+			var oldTail = this.tail;
+			oldTail.next = node;
+			node.setPrevious(oldTail);
+			this.tail = node;
+			node.autoRoute();
+			
+		} else if (addType==tsNodeTypes.PATH && this.tail.type == tsNodeTypes.MANUAL) { 
+			// are we adding a new point to path and
+			// and last node was a manual node?
+			
+			// yes, add a new point to that node
 			type = tsNodeTypes.PATH;
 			this.tail.addPoint(latLng);
 		} else {
@@ -222,9 +368,19 @@ tsPointList.addManualPoint = function(latLng, forceNewNode) {
 	
 	if (node) node.addOverlays(theMap);
 	return type; // return type, may be 'home'
-
 };
 
+tsPointList.addManualPoint = function(latLng, forceNewNode) {
+	var addType;
+	if (forceNewNode) addType = tsNodeTypes.MANUAL;
+	else addType = tsNodeTypes.PATH;
+	return this.addPoint(latLng,addType);
+};
+
+
+tsPointList.addRoutedPoint = function(latLng) {
+	return this.addPoint(latLng,tsNodeTypes.TOROUTE);
+};
 
 function tsInitializeList() {
 }
