@@ -39,21 +39,33 @@ body {
 	<div id="dummyDiv">
 		<div class="controlContainer" id="toolPalette">
 			<div class="controlElement controlElementInactive" id="dragTool" title="Move map">
-				<img src="handdrag.png" height=25em>
+				<img src="handdrag.png" height=35ex>
 			</div>
 			<div class="controlElement controlElementInactive" id="manualPointTool"
 				title="Manually add points to path">
-				<img src="point2point.png" height=25em>
+				<img src="point2point.png" height=35ex>
 			</div>
 			<div class="controlElement controlElementInactive" id="manualNodeTool"
 				title="Manually add a new step">
-				<img src="point2node.png" height=25em>
+				<img src="point2node.png" height=35ex>
 			</div>
 			<div class="controlElement controlElementInactive" id="routeTool"
 				title="Auto-route path to point">
-				<img src="route.png" height=25em>
+				<img src="route.png" height=35ex>
 			</div>
-		</div>
+			<div class="controlElement controlElementInactive" id="deleteTool"
+				title="Delete a node, click tool again to delete last node">
+				<img src="deletenode.png" height=35ex>
+			</div>
+			<div class="controlElement controlElementInactive" id="loadTool" style="padding:0ex;"
+				title="Load track from a CSV file">
+				<button id="loadToolButton"><img class="controlPaddingOnly" src="loadtrack.png" height=35ex"></button>
+				<input type="file" id="inputCSV" style="display:none;">
+			</div>
+			<div class="controlElement controlElementInactive" id="saveTool" style="padding:0ex;"
+				title="Save track to a CSV file">
+				<button id="saveToolButton"><img class="controlPaddingOnly" src="savetrack.png" height=35ex"></button>
+			</div>
 	</div>
 	
 	<div id="dummyDiv" style="display:none">

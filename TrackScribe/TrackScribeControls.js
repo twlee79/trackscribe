@@ -195,6 +195,18 @@ tsRouteCtrl.installMapListeners = function() {
 	});
 };
 
+var tsDeleteNodeCtrl = Object.create(tsControl);
+
+tsDeleteNodeCtrl.activate = function() {
+	lastControl = this.owner.activeControl;
+	if (lastControl==this) {
+		// click on delete control when already active = delete last node
+		tsPointList.deleteLastNode();
+	}
+	tsControl.activate.call(this);
+};
+
+
 var tsStatusCtrl = Object.create(tsControl);
 tsStatusCtrl.setHTML = function(html) {
 	this.theControl.innerHTML = html;
@@ -203,7 +215,7 @@ tsStatusCtrl.setHTML = function(html) {
 var tsDistanceCtrl = Object.create(tsStatusCtrl);
 
 tsDistanceCtrl.update = function(distance) {
-	this.theControl.innerHTML = distance.toFixed(1) + " km";
+	this.theControl.innerHTML = distance.toFixed(2) + " km";
 	
 };
 
@@ -211,6 +223,29 @@ tsDistanceCtrl.update = function(distance) {
 var tsTipsCtrl = Object.create(tsStatusCtrl);
 var tsInfoCtrl = Object.create(tsStatusCtrl);
 
+function tsSaveToolClick() {
+	if (tsPointList.isEmpty()) {
+		tsError("Nothing to save!");
+		return;
+	}
+	var filename = tsGetISODate() + " track.csv";
+	tsDownloadCSV(filename,tsPointList.toCSV());
+}
+
+function tsLoadToolClick() {
+	// using HTML5 File API, hidden input="file" element present (inputCSV) 
+	if (!tsPointList.isEmpty()) {
+		if (!window.confirm("Loading a track will clear current track?")) return;
+	}
+	document.getElementById('inputCSV').click();
+}
+
+function tsLoadToolFileSelected() {
+	var theFile = document.getElementById('inputCSV').files[0];
+	var reader = new FileReader();
+	reader.onload = function() { tsPointList.fromCSV(reader.result);}; // called after reading finished
+	reader.readAsText(theFile);
+}
 
 function tsInitializeControls() {
 	tsDrawControls.initialize("toolPalette",google.maps.ControlPosition.RIGHT_TOP);
@@ -218,6 +253,11 @@ function tsInitializeControls() {
 	tsDrawControls.addControl("manualPointTool",tsManualPointCtrl, true);
 	tsDrawControls.addControl("manualNodeTool",tsManualNodeCtrl, true);
 	tsDrawControls.addControl("routeTool",tsRouteCtrl, true);
+	tsDrawControls.addControl("deleteTool",tsDeleteNodeCtrl, true);
+	document.getElementById("loadToolButton").addEventListener("click", tsLoadToolClick);
+	document.getElementById('inputCSV').addEventListener("change",tsLoadToolFileSelected); // called when a file is selected
+	
+	document.getElementById("saveToolButton").addEventListener("click", tsSaveToolClick);
 	
 	tsStatusBar.initialize("statusBar",google.maps.ControlPosition.BOTTOM);
 	tsDrawControls.addControl("distance",tsDistanceCtrl, false);
@@ -225,6 +265,8 @@ function tsInitializeControls() {
 	tsDrawControls.addControl("info",tsInfoCtrl, false);
 	
 	tsDrawControls.controls[1].activate();
+	
+	
 
 }
 

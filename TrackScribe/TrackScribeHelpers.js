@@ -3,6 +3,26 @@ var tsDeg2Rad = Math.PI/180.0;
 var tsRad2Deg = 180.0/Math.PI;
 var tsEarthR = 6378137; // radius of earth in metres
 
+function tsDebugInfo(msg) {
+	// silently log msg to console
+	msg = "Info: "+msg;
+	console.log(msg);
+};
+
+function tsWarning(msg) {
+	msg = "Warning! "+msg;
+	window.alert(msg);
+	console.log(msg);
+};
+
+function tsError(msg) {
+	msg = "ERROR! "+msg;
+	window.alert(msg);
+	console.log(msg);
+};
+
+
+
 function tsComputeDistBtw(latLng1, latLng2) {
 	//return google.maps.geometry.spherical.computeDistanceBetween(latLng1,latLng2);
 	// convert to radians
@@ -26,6 +46,68 @@ function tsComputeOffset(latLng1, latLng2, distance) {
     return google.maps.geometry.spherical.computeOffset(latLng1, distance, heading);
 
 }
+
+function tsGenerateReverseDict(theEnum) {
+	// generate a reverse lookup of value to key from an enum object containing attributes with values
+	var ret = {};
+	for (var key in theEnum) {
+		var value = theEnum[key].value;
+		ret[value] = key;
+	};
+	return ret;
+}
+
+function tsDownloadCSV(filename, csv) {
+	// download string csv using Data URI
+	var dl = document.createElement('A');
+    dl.setAttribute('HREF', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv));
+    dl.setAttribute('DOWNLOAD', filename);
+    dl.click();
+}
+
+function tsPadTime(number) {
+	var absNum = Math.abs(number);
+    var floorNum = Math.floor(absNum);
+    
+    return (floorNum < 10 ? '0' : '') + floorNum;
+	
+}
+
+
+function tsGetISODate() {
+    var localTime = new Date();
+    
+
+    return localTime.getFullYear() 
+        + '-' + tsPadTime(localTime.getMonth()+1)
+        + '-' + tsPadTime(localTime.getDate());
+
+}
+
+function tsGetISOTime() {
+    var localTime = new Date();
+    
+    function tsPadTime(number) {
+    	var absNum = Math.abs(number);
+        var floorNum = Math.floor(absNum);
+        
+        return (floorNum < 10 ? '0' : '') + floorNum;
+    	
+    }
+    
+    var tzOffset = localTime.getTimezoneOffset();
+    var tzSign = tzOffset < 0 ? '+' : '-'; // offset sign is opposite what should be printed
+    return localTime.getFullYear() 
+        + '-' + tsPadTime(localTime.getMonth()+1)
+        + '-' + tsPadTime(localTime.getDate())
+        + 'T' + tsPadTime(localTime.getHours())
+        + ':' + tsPadTime(localTime.getMinutes()) 
+        + ':' + tsPadTime(localTime.getSeconds()) 
+        + tzSign + tsPadTime(tzOffset / 60) + tsPadTime(tzOffset % 60);
+
+}
+
+
 
 // convert SVG polygons to path with http://readysetraphael.com/
 // ensure centred around origin

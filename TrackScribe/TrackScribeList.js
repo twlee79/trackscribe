@@ -8,15 +8,17 @@
  */
 
 var tsNodeTypes = {
-		HOME: {value: 1, name: "Home node", color : "darkblue"},
-		MANUAL: {value: 10, name: "Manual node", color : "skyblue"},
-		PATH: {value: 11, name: "Path point"},
-		TOROUTE: {value: 20, name: "Node to route", color : "mediumblue"},
-		ROUTED: {value: 21, name: "Routed node", color : "mediumblue"},
+	HOME: {value: 1, name: "Home node", color : "darkblue"},
+	MANUAL: {value: 10, name: "Manual node", color : "skyblue"},
+	PATH: {value: 11, name: "Path point"},
+	TOROUTE: {value: 20, name: "Node to route", color : "mediumblue"},
+	ROUTED: {value: 21, name: "Routed node", color : "mediumblue"},
 };
 
-var tsError = {
-		INVALIDNODE : new Error("Invalid node")
+var tsNodeTypesRev = tsGenerateReverseDict(tsNodeTypes);
+
+var tsException = {
+	INVALIDNODE : new Error("Invalid node")
 };
 
 
@@ -42,6 +44,16 @@ tsNode.initialize  = function (type, latLng) {
 	this.type = type;
 	this.path = new google.maps.MVCArray();
 	this.path.push(latLng);
+};
+
+
+tsNode.clear = function() {
+	// ensure all contents reset for to allow deletion
+	this.previous = this.next = null;
+	this.path = this.type = null;
+	this.clearOverlays();
+	this.clearKmMarkers();
+	
 };
 
 tsNode.calculateLength = function() {
@@ -99,7 +111,7 @@ tsNode.clearKmMarkers = function() {
 tsNode.setPrevious = function(prevNode) {
 	this.previous = prevNode;
 	this.path.insertAt(0,prevNode.getTerminus());
-	this.calculateLength();
+	this.calculateLength(); //TODO: should this be done here?
 };
 
 /**
@@ -136,7 +148,7 @@ tsNode.getTerminus = function() {
 };
 
 tsNode.addPoint = function(latLng) {
-	if (this.type==tsNodeTypes.DUMMY) throw tsError.INVALIDNODE;
+	if (this.type==tsNodeTypes.DUMMY) throw tsException.INVALIDNODE;
 	var newLength= this.path.push(latLng);
 	if (this.marker) this.marker.setPosition(this.getTerminus());
 	this.calculateLength();
@@ -144,7 +156,7 @@ tsNode.addPoint = function(latLng) {
 };
 
 tsNode.autoRoute = function() {
-	// todo: CHECK if path is valid?
+	// TODO: CHECK if path is valid?
 	var request = {
 		origin : this.path.getAt(0),
 		destination : this.path.getAt(1),
@@ -153,7 +165,9 @@ tsNode.autoRoute = function() {
 	};
 	var that = this;
 	tsMain.directionsService.route(request, function(response, status) {
-		if (status == google.maps.DirectionsStatus.OK) {
+		if (status != google.maps.DirectionsStatus.OK) {
+            tsWarning("Direction service failed due to: " + status);
+		} else {
 			that.clearOverlays();
 			var origin = that.path.getAt(0);
 			that.path.clear();
@@ -176,8 +190,6 @@ tsNode.autoRoute = function() {
 			
 			that.type = tsNodeTypes.ROUTED;
 			that.addOverlays(theMap);
-
-		
 		};
 	});
 };
@@ -307,7 +319,50 @@ var tsPointList = {
 	tail : null,
 	pathLength : 0,
 };
-tsNode.owner = tsPointList; // only one list for so all nodes belong to it 
+tsNode.owner = tsPointList; // only one list for so all nodes belong to it
+
+/**
+ * Add Node to end of list
+ * @param node
+ */
+tsPointList.push = function(node) {
+
+	if (this.tail != null) { 
+		var oldTail = this.tail;
+		oldTail.next = node;
+		node.setPrevious(oldTail);
+	}
+	this.tail = node;
+	if (this.head == null) this.head = node;
+};
+
+tsPointList.clear = function() {
+	while (this.head) tsPointList.deleteLastNode();	
+};
+
+tsPointList.isEmpty = function() {
+	return this.head==null;	
+};
+
+/**
+ * Remove last node
+ * @param node
+ */
+tsPointList.deleteLastNode = function() {
+	if (this.tail != null) {
+		var oldTail = this.tail;
+		var previousNode = oldTail.previous;
+		oldTail.clear();
+		if (previousNode!=null) {
+			previousNode.next = null;
+			previousNode.calculateLength();
+		} 
+		this.tail = previousNode;
+		if (this.tail==null) {
+			this.head = null;
+		}
+	}
+};
 
 tsPointList.calculateLength = function() {
 	var node = this.head;
@@ -331,8 +386,7 @@ tsPointList.addPoint = function(latLng, addType) {
 		type = tsNodeTypes.HOME;
 		node = Object.create(tsNode);
 		node.initialize(type, latLng);
-		this.head = node;
-		this.tail = node;
+		this.push(node);
 	} else {
 		// yes there are some points
 		if (addType==tsNodeTypes.TOROUTE) {
@@ -340,10 +394,7 @@ tsPointList.addPoint = function(latLng, addType) {
 			type = tsNodeTypes.TOROUTE;
 			node = Object.create(tsNode);
 			node.initialize(type, latLng);
-			var oldTail = this.tail;
-			oldTail.next = node;
-			node.setPrevious(oldTail);
-			this.tail = node;
+			this.push(node);
 			node.autoRoute();
 			
 		} else if (addType==tsNodeTypes.PATH && this.tail.type == tsNodeTypes.MANUAL) { 
@@ -358,10 +409,7 @@ tsPointList.addPoint = function(latLng, addType) {
 			type = tsNodeTypes.MANUAL;
 			node = Object.create(tsNode);
 			node.initialize(type, latLng);
-			var oldTail = this.tail;
-			oldTail.next = node;
-			node.setPrevious(oldTail);
-			this.tail = node;
+			this.push(node);
 			
 		}
 	}
@@ -380,6 +428,127 @@ tsPointList.addManualPoint = function(latLng, forceNewNode) {
 
 tsPointList.addRoutedPoint = function(latLng) {
 	return this.addPoint(latLng,tsNodeTypes.TOROUTE);
+};
+
+/**
+ * Convert point list to a CSV string
+ */
+tsPointList.toCSV = function() {
+	var output = "";
+	
+	var curNode = this.head;
+	var cumulDist = 0; // cumulative distance of whole track
+	var index = 0; // cumulative index of written points
+	var lastLatLng = null;
+	var type = null;
+	var latLng;
+	
+	output += "#,latitude,longitude,type,dist\n";
+	
+	while (curNode!=null) {
+		if (curNode.path) {
+			for (var i = 0; i < curNode.path.getLength(); i++) {
+				latLng = curNode.path.getAt(i);
+				if (!latLng.equals(lastLatLng)) { // only write unique points, last point of node x and first point of node x+1 are identical
+					if (!type) type = curNode.type; // first point written for a node is given node's type
+					else type =  tsNodeTypes.PATH; // subsequent points in node's path are given PATH type
+					if (lastLatLng) cumulDist += tsComputeDistBtw(lastLatLng, latLng); // calc cumul dist to output
+					output += index + "," 
+					        + latLng.lat().toFixed(6) + ","
+					        + latLng.lng().toFixed(6) + ","
+					        + tsNodeTypesRev[type.value] +","
+					        + cumulDist.toFixed(1) + "\n";
+					index += 1;
+				}
+				lastLatLng = latLng;
+			}
+		}
+		type = null; // invalidate so loop is aware that next point is first in new node
+		curNode = curNode.next;
+	}
+	return output;
+};
+
+/**
+ * Convert CSV string to point list
+ */
+tsPointList.fromCSV = function(csv) {
+	this.clear();
+	var lines = csv.split("\n");
+	var header;
+	var latIndex = null, lngIndex = null, typeIndex = null;
+    for (var i=0;i<lines.length;i++) {
+    	var line = lines[i].trim();
+    	if (line.length>0) {
+	    	//console.log(line);
+	    	var tokens = line.split(",");
+	    	if (!header) {
+	    		header = tokens;
+	    		for (var j=0;j<header.length;j++) {
+	    			var headerToken = header[j].substr(0,3).toLowerCase();
+	    			if (headerToken=="lat") {
+	    				latIndex = j;
+	    			} else if (headerToken=="lng" || headerToken=="lon" ) {
+	    				lngIndex = j;
+	    			} else if (headerToken=="typ") {
+	    				typeIndex = j;
+	    			}
+	    		}
+	    		if (!latIndex) {
+	    			tsError("Could not find lat data in input file.");
+	    		}
+	    		if (!lngIndex) {
+	    			tsError("Could not find lng data in input file.");
+	    		}
+	    		if (!typeIndex) {
+	    			tsWarning("Could not find type data in input file.");
+	    		}
+	    		
+	    	} else {
+	    		var lat = parseFloat(tokens[latIndex]);
+	    		var lng = parseFloat(tokens[lngIndex]);
+	    		var latLng = new google.maps.LatLng(lat,lng);
+	    		var type = null;
+	    		if (typeIndex) {
+	    			type = tokens[typeIndex];
+	    			type = tsNodeTypes[type];
+	    		} else {
+	    			// type = null, if no types given in input file
+	    			// start with home, then add remaining as path of a single manual node
+	    			if (this.isEmpty()) type = tsNodeTypes.HOME;
+	    			else if (this.tail.type == tsNodeTypes.HOME) type = tsNodeTypes.MANUAL;
+	    			else type = tsNodeTypes.PATH;
+	    		}
+	    		if (this.isEmpty()) {
+	    			if (type != tsNodeTypes.HOME) tsWarning("First point is not HOME type, defaulting to HOME, line: "+line);
+	    			type = tsNodeTypes.HOME;
+	    		} else {
+    				if (type == tsNodeTypes.PATH) {
+    					// adding a point as path of existing node
+    					if (this.tail.type == tsNodeTypes.MANUAL || this.tail.type == tsNodeTypes.ROUTED) {
+    						// expect a supported tail node to add to
+    						this.tail.addPoint(latLng);
+    						latLng = null; // invalidate if already added
+    					} else {
+    						tsWarning("Trying to add point to unsupported node type, adding as node, line: "+line);
+    						this.type = tsNodeTypes.MANUAL;
+    					}
+    				} else if (type == tsNodeTypes.MANUAL || type == tsNodeTypes.ROUTED) {
+    				} else {
+    					tsWarning("Unknown point type, defaulting to MANUAL:, line: "+line);
+    					type = tsNodeTypes.MANUAL;
+    				}
+	    		}
+				if (latLng) {
+					// adding a new node
+		    		var node = Object.create(tsNode);
+					node.initialize(type, latLng);
+					this.push(node);
+					node.addOverlays(tsMain.map);
+				}
+	    	}
+    	}
+    }
 };
 
 function tsInitializeList() {
