@@ -160,11 +160,17 @@ tsControl.activate = function() {
 	this.setActiveSyle(true);
 };
 
+var tsDragCtrl = Object.create(tsControl);
+
+tsDragCtrl.installMapListeners = function() {
+	tsMain.setCursor(null); // reset cursor
+};
 
 var tsManualPointCtrl = Object.create(tsControl);
 
 tsManualPointCtrl.installMapListeners = function() {
 	var that = this; // for use in closures
+	tsMain.setCursor('crosshair');
 	this.owner.mapClickListener = google.maps.event.addListener(tsMain.map, 'click', function(mouseEvent) {
 		var latLng = mouseEvent.latLng;
 		tsPointList.addManualPoint(latLng, false);
@@ -176,6 +182,7 @@ var tsManualNodeCtrl = Object.create(tsControl);
 
 tsManualNodeCtrl.installMapListeners = function() {
 	var that = this; // for use in closures
+	tsMain.setCursor('crosshair');
 	this.owner.mapClickListener = google.maps.event.addListener(tsMain.map, 'click', function(mouseEvent) {
 		
 		var latLng = mouseEvent.latLng;
@@ -183,11 +190,11 @@ tsManualNodeCtrl.installMapListeners = function() {
 	});
 };
 
-var tsDragCtrl = Object.create(tsControl);
 var tsRouteCtrl = Object.create(tsControl);
 
 tsRouteCtrl.installMapListeners = function() {
 	var that = this; // for use in closures
+	tsMain.setCursor('crosshair');
 	this.owner.mapClickListener = google.maps.event.addListener(tsMain.map, 'click', function(mouseEvent) {
 		
 		var latLng = mouseEvent.latLng;
@@ -198,6 +205,7 @@ tsRouteCtrl.installMapListeners = function() {
 var tsDeleteNodeCtrl = Object.create(tsControl);
 
 tsDeleteNodeCtrl.activate = function() {
+	tsMain.setCursor('default'); 
 	lastControl = this.owner.activeControl;
 	if (lastControl==this) {
 		// click on delete control when already active = delete last node
@@ -205,6 +213,35 @@ tsDeleteNodeCtrl.activate = function() {
 	}
 	tsControl.activate.call(this);
 };
+
+var tsHeightCtrl = Object.create(tsControl);
+tsHeightCtrl.infoWindow = null;
+
+tsHeightCtrl.installMapListeners = function() {
+	var that = this; // for use in closures
+	tsMain.setCursor('crosshair');
+	this.owner.mapClickListener = google.maps.event.addListener(tsMain.map, 'click', function(mouseEvent) {
+		
+		var latLng = mouseEvent.latLng;
+		tsLookupDEM(latLng, function(lookupResult, lookupStatus) {
+			var resultText = lookupResult.toFixed(1) + " m";
+			if (lookupStatus==tsLookupStatus.SUCCESS) {
+				if (that.infoWindow == null) {
+					var infoWindowOptions = {
+						position : latLng,
+					};
+					that.infoWindow = new google.maps.InfoWindow(infoWindowOptions);
+					that.infoWindow.open(tsMain.map);
+					that.infoWindow.setContent(resultText);
+				} else {
+					that.infoWindow.setContent(resultText);
+					that.infoWindow.setPosition(latLng);
+				}
+			}
+		});
+	});
+};
+
 
 
 var tsStatusCtrl = Object.create(tsControl);
@@ -254,6 +291,7 @@ function tsInitializeControls() {
 	tsDrawControls.addControl("manualNodeTool",tsManualNodeCtrl, true);
 	tsDrawControls.addControl("routeTool",tsRouteCtrl, true);
 	tsDrawControls.addControl("deleteTool",tsDeleteNodeCtrl, true);
+	tsDrawControls.addControl("heightTool",tsHeightCtrl, true);
 	document.getElementById("loadToolButton").addEventListener("click", tsLoadToolClick);
 	document.getElementById('inputCSV').addEventListener("change",tsLoadToolFileSelected); // called when a file is selected
 	

@@ -27,12 +27,34 @@ tsMain.initialize = function() {
 	this.map = new google.maps.Map(document.getElementById("map-canvas"),
 			this.mapOptions);
 	this.directionsService = new google.maps.DirectionsService();
+	this.elevationSVG = document.getElementById("elevation-svg");
+	testSVG() ;
+};
+
+tsMain.setCursor = function(cursor) {
+	this.map.setOptions({draggableCursor:cursor});
 };
 
 function tsInitialize() {
 	tsMain.initialize();
 	tsInitializeList();
 	tsInitializeControls();
+}
+
+function tsSVGLoad(event) {
+	console.log(event.target.ownerDocument);
+	//this.elevationSVG = event.target;
+	//testSVG(event.target);
+}
+
+function testSVG(svg) {
+	
+	var svgns = "http://www.w3.org/2000/svg";
+	var shape = document.createElementNS(svgns, "polygon");
+    shape.setAttributeNS(null, "points", "5,5 45,45 5,45 45,5");
+    shape.setAttributeNS(null, "fill", "none");
+    shape.setAttributeNS(null, "stroke", "black");	
+    tsMain.elevationSVG.appendChild(shape);
 }
 
 

@@ -25,6 +25,8 @@ body {
     </script>
 <script type="text/javascript" src="TrackScribeList.js">
     </script>
+<script type="text/javascript" src="TrackScribeDEM.js">
+    </script>
 <script type="text/javascript" src="TrackScribeControls.js">
     </script>
 <script type="text/javascript" src="TrackScribeMain.js">
@@ -57,6 +59,10 @@ body {
 				title="Delete a node, click tool again to delete last node">
 				<img src="deletenode.png" height=35ex>
 			</div>
+			<div class="controlElement controlElementInactive" id="heightTool"
+				title="Lookup height of current location">
+				<img src="height.png" height=35ex>
+			</div>
 			<div class="controlElement controlElementInactive" id="loadTool" style="padding:0ex;"
 				title="Load track from a CSV file">
 				<button id="loadToolButton"><img class="controlPaddingOnly" src="loadtrack.png" height=35ex"></button>
@@ -82,6 +88,13 @@ body {
 				style="text-align:left;  overflow-y: scroll; padding-top:0ex; padding-bottom:0ex; height:5.5ex">
 				
 			</div>
+			<div id="elevation" class="controlElement controlElementBasic" 
+				style="height: 10ex">
+				<svg id="elevation-svg" xmlns="http://www.w3.org/2000/svg"
+				     xmlns:xlink="http://www.w3.org/1999/xlink"
+				     onload="tsSVGLoad(event)">
+			    </svg>
+     			</div>
 		</div>
 	</div>
 	
