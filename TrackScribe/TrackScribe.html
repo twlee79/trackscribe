@@ -21,6 +21,12 @@ body {
 <script type="text/javascript"
 	src="https://maps.googleapis.com/maps/api/js?libraries=geometry&key=AIzaSyCcUEAW1DD7QfJYDm8rD1dzAQd1T-vbuSI&sensor=false">
     </script>
+<script type="text/javascript" src="raphael.2.0.2.js">
+    </script>
+<script type="text/javascript" src="g.raphael.0.51.js">
+    </script>
+<script type="text/javascript" src="g.line.0.51.js">
+    </script>
 <script type="text/javascript" src="TrackScribeHelpers.js">
     </script>
 <script type="text/javascript" src="TrackScribeList.js">
@@ -75,7 +81,18 @@ body {
 	</div>
 	
 	<div id="dummyDiv" style="display:none">
-		<div class="controlContainerHorizontal" id="statusBar" style="width:90%;  padding-bottom: 3.5ex ; height:5ex">
+		<div class="controlContainerHorizontal" id="statusBar" style="width:90%; padding-bottom: 3.5ex">
+			<div id="elevationContainer" class="controlElement controlElementBasic" 
+				style="height: 20ex; overflow-y: scroll; overflow-x: scroll;">
+				<div id="elevationPlot" style="position: absolute;">
+				</div>
+				<!--
+				<svg id="elevation-svg" xmlns="http://www.w3.org/2000/svg"
+				     xmlns:xlink="http://www.w3.org/1999/xlink"
+				     onload="tsSVGLoad(event)">
+			    </svg>
+			    -->
+ 			</div>
 			<div id="distance" class="controlElement controlElementBasic controlSideBySide" 
 				style="width:10%; min-width:6em; font-weight:bold; font-size:150%; ">
 				0.0 km
@@ -88,13 +105,6 @@ body {
 				style="text-align:left;  overflow-y: scroll; padding-top:0ex; padding-bottom:0ex; height:5.5ex">
 				
 			</div>
-			<div id="elevation" class="controlElement controlElementBasic" 
-				style="height: 10ex">
-				<svg id="elevation-svg" xmlns="http://www.w3.org/2000/svg"
-				     xmlns:xlink="http://www.w3.org/1999/xlink"
-				     onload="tsSVGLoad(event)">
-			    </svg>
-     			</div>
 		</div>
 	</div>
 	

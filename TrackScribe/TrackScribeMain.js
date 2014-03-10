@@ -27,8 +27,6 @@ tsMain.initialize = function() {
 	this.map = new google.maps.Map(document.getElementById("map-canvas"),
 			this.mapOptions);
 	this.directionsService = new google.maps.DirectionsService();
-	this.elevationSVG = document.getElementById("elevation-svg");
-	testSVG() ;
 };
 
 tsMain.setCursor = function(cursor) {
@@ -39,15 +37,17 @@ function tsInitialize() {
 	tsMain.initialize();
 	tsInitializeList();
 	tsInitializeControls();
+	tsMain.elevationPlot = Object.create(tsElevationPlot);
+	//tsMain.elevationPlot.initialize();
 }
 
-function tsSVGLoad(event) {
-	console.log(event.target.ownerDocument);
-	//this.elevationSVG = event.target;
-	//testSVG(event.target);
-}
-
+/*
 function testSVG(svg) {
+	//this.elevationSVG = document.getElementById("elevation-svg");
+	testSVG() ;
+	var r = Raphael("elevation");
+	//tsSVG() ;
+	return;
 	
 	var svgns = "http://www.w3.org/2000/svg";
 	var shape = document.createElementNS(svgns, "polygon");
@@ -55,7 +55,7 @@ function testSVG(svg) {
     shape.setAttributeNS(null, "fill", "none");
     shape.setAttributeNS(null, "stroke", "black");	
     tsMain.elevationSVG.appendChild(shape);
-}
+}*/
 
 
 google.maps.event.addDomListener(window, 'load', tsInitialize);

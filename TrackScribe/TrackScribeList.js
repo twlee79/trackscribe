@@ -29,6 +29,9 @@ var tsNode = {
 	pathLength : 0,
 	cumulLength : 0,
 	
+	// elevation data
+	pathHeight : null,
+
 	// for overlays
 	marker : null,
 	polyline : null,
@@ -43,6 +46,7 @@ var tsNode = {
 tsNode.initialize  = function (type, latLng) {
 	this.type = type;
 	this.path = new google.maps.MVCArray();
+	this.pathHeight = [];
 	this.path.push(latLng);
 };
 
@@ -51,9 +55,16 @@ tsNode.clear = function() {
 	// ensure all contents reset for to allow deletion
 	this.previous = this.next = null;
 	this.path = this.type = null;
+	this.pathLength = null;
 	this.clearOverlays();
 	this.clearKmMarkers();
 	
+};
+
+tsNode.updateHeight = function() {
+	// update height array, should be called every time this.path is altered
+	this.pathHeight.length = 0; // reset array 
+	// TODO: more intelligent discarding of only affected points
 };
 
 tsNode.calculateLength = function() {
@@ -63,7 +74,7 @@ tsNode.calculateLength = function() {
 	var lastPointCumulLength = prevNodeCumulLength;
 	var markerEvery = 1000.0; // metres
 	this.clearKmMarkers();
-	if (this.path) {
+	if (this.path) { // TODO: why is this check here?
 		for (var i = 1; i < this.path.getLength(); i++) {
 			var latLng1 = this.path.getAt(i-1);
 			var latLng2 = this.path.getAt(i);
@@ -86,6 +97,8 @@ tsNode.calculateLength = function() {
 				};
 				if (!this.kmMarkers) this.kmMarkers = [];
 				this.kmMarkers.push(new google.maps.Marker(kmMarkerOptions));
+				
+				// TODO: do we need km marker height?
 				
 			}
 			lastPointCumulLength = curPointCumulLength;
@@ -125,6 +138,7 @@ tsNode.updateTerminus = function(latLng) {
 		this.next.updatePosition(); 
 	}
 	this.calculateLength();
+	this.updateHeight();
 };
 
 tsNode.updatePosition = function() {
@@ -137,7 +151,8 @@ tsNode.updatePosition = function() {
 		this.path.push(origin);
 		this.path.push(terminus);
 		this.autoRoute();
-		this.addOverlays();
+		this.addOverlays(); 
+		this.updateHeight();
 	}
 
 };
@@ -152,6 +167,7 @@ tsNode.addPoint = function(latLng) {
 	var newLength= this.path.push(latLng);
 	if (this.marker) this.marker.setPosition(this.getTerminus());
 	this.calculateLength();
+	this.updateHeight();
 	return newLength; 
 };
 
@@ -190,6 +206,7 @@ tsNode.autoRoute = function() {
 			
 			that.type = tsNodeTypes.ROUTED;
 			that.addOverlays(theMap);
+			this.updateHeight();
 		};
 	});
 };
@@ -297,6 +314,7 @@ tsNode.addPolylineListeners = function() {
 	var that = this;
 	var pathEdited = function(mouseEvent) {
 		that.calculateLength();
+		that.updateHeight();
 	};
 	google.maps.event.addListener(this.polyline, "dragend", pathEdited);
     google.maps.event.addListener(this.polyline.getPath(), "insert_at", pathEdited);
@@ -429,6 +447,58 @@ tsPointList.addManualPoint = function(latLng, forceNewNode) {
 tsPointList.addRoutedPoint = function(latLng) {
 	return this.addPoint(latLng,tsNodeTypes.TOROUTE);
 };
+
+tsPointList.lookupHeight = function() {
+	var curNode = this.head;
+	var lastLatLng = null;
+	var latLng;
+	var latLngs = [];
+	
+	// generate an array of points to lookup from whole list 
+	while (curNode!=null) {
+		if (curNode.path) {
+			for (var i = 0; i < curNode.path.getLength(); i++) {
+				latLng = curNode.path.getAt(i);
+				if (!latLng.equals(lastLatLng)) { // only process unique points, last point of node x and first point of node x+1 are identical
+					latLngs.push(latLng);
+				}
+				lastLatLng = latLng;
+			}
+		}
+		curNode = curNode.next;
+	}
+	tsLookupDEM(null,latLngs, function(lookupResult, lookupStatus) {
+		if (lookupStatus==tsLookupStatus.SUCCESS) {
+			var cumulDist = 0.0;
+			var latLng;
+			var lastLatLng = null;
+			var dists = [];
+			var heights = [];
+			for (var i=0; i< lookupResult.length; i++) {
+				var lookupElement = lookupResult[i]; // has latLng, q (height), index
+				latLng = lookupElement.latLng;
+				if (lastLatLng) {
+					cumulDist+=tsComputeDistBtw(latLng, lastLatLng);
+				}
+				lastLatLng = latLng;
+				//console.log(lookupElement);
+				dists.push(cumulDist);
+				heights.push(lookupElement.q);
+				console.log(cumulDist,lookupElement.q);
+				if (lookupElement.index==0) {
+					console.log("Start");
+				}
+				// TODO start of next == end of prev
+				if (lookupElement.index<0) {
+					console.log("End");
+				}
+			}
+			tsElevationPlot.initialize(dists,heights);
+		}
+	});
+};
+
+
 
 /**
  * Convert point list to a CSV string

@@ -15,7 +15,7 @@
 	position: absolute; 
 	cursor: pointer; 
 	z-index: 0;
-	display: table;
+	/*display: table;*/
 }
 .controlSideBySide
 {

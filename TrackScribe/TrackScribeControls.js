@@ -203,12 +203,13 @@ tsRouteCtrl.installMapListeners = function() {
 };
 
 var tsDeleteNodeCtrl = Object.create(tsControl);
+// TODO add delete selected node (listener)
 
 tsDeleteNodeCtrl.activate = function() {
 	tsMain.setCursor('default'); 
 	lastControl = this.owner.activeControl;
 	if (lastControl==this) {
-		// click on delete control when already active = delete last node
+		// sdecond click on delete control = delete last node
 		tsPointList.deleteLastNode();
 	}
 	tsControl.activate.call(this);
@@ -217,15 +218,26 @@ tsDeleteNodeCtrl.activate = function() {
 var tsHeightCtrl = Object.create(tsControl);
 tsHeightCtrl.infoWindow = null;
 
+tsHeightCtrl.activate = function() {
+	tsMain.setCursor('default'); 
+	lastControl = this.owner.activeControl;
+	if (lastControl==this) {
+		// second click on height = lookup all points
+		tsPointList.lookupHeight();
+	}
+	tsControl.activate.call(this);
+};
+
+
 tsHeightCtrl.installMapListeners = function() {
 	var that = this; // for use in closures
 	tsMain.setCursor('crosshair');
 	this.owner.mapClickListener = google.maps.event.addListener(tsMain.map, 'click', function(mouseEvent) {
 		
 		var latLng = mouseEvent.latLng;
-		tsLookupDEM(latLng, function(lookupResult, lookupStatus) {
-			var resultText = lookupResult.toFixed(1) + " m";
+		tsLookupDEM(latLng, null, function(lookupResult, lookupStatus) {
 			if (lookupStatus==tsLookupStatus.SUCCESS) {
+				var resultText = lookupResult.toFixed(1) + " m";
 				if (that.infoWindow == null) {
 					var infoWindowOptions = {
 						position : latLng,
@@ -301,6 +313,7 @@ function tsInitializeControls() {
 	tsDrawControls.addControl("distance",tsDistanceCtrl, false);
 	tsDrawControls.addControl("tips",tsTipsCtrl, false);
 	tsDrawControls.addControl("info",tsInfoCtrl, false);
+	
 	
 	tsDrawControls.controls[1].activate();
 	
