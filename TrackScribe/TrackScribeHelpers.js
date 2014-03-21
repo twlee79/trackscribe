@@ -1,3 +1,4 @@
+"use strict";
 
 var tsDeg2Rad = Math.PI/180.0;
 var tsRad2Deg = 180.0/Math.PI;
@@ -21,22 +22,39 @@ function tsError(msg) {
 	console.log(msg);
 };
 
+/**
+ * Multiply a CSS length string by a factor, enforcing min or max if specified.
+ * @param length CSS length containing a float value and a unit
+ * @param factor Number to muliply by (float)
+ * @param min minimum returned result, null to ignore
+ * @param max maximum return result, null to ignore
+ * @returns CSS length multipled by factor with same unit as initial length.
+ */
+function tsMultiplyCSSLength(length,factor,min,max) {
+	var parsedLength = /([+\-\.0-9]+)(.*)/.exec(length);
+	if (!parsedLength) throw TypeError("Invalid CSS length "+length);
+	var value = parseFloat(parsedLength[1]);
+	value*=factor;
+	if (min && value<min) value = min;
+	if (max && value>max) value = max;
+	return value + parsedLength[2];
+};
 
 
 function tsComputeDistBtw(latLng1, latLng2) {
 	//return google.maps.geometry.spherical.computeDistanceBetween(latLng1,latLng2);
 	// convert to radians
-	lat1 = latLng1.lat() * tsDeg2Rad;
-	lng1 = latLng1.lng() * tsDeg2Rad;
-	lat2 = latLng2.lat() * tsDeg2Rad;
-	lng2 = latLng2.lng() * tsDeg2Rad;
+	var lat1 = latLng1.lat() * tsDeg2Rad;
+	var lng1 = latLng1.lng() * tsDeg2Rad;
+	var lat2 = latLng2.lat() * tsDeg2Rad;
+	var lng2 = latLng2.lng() * tsDeg2Rad;
 	
-	dLat = lat2 - lat1;
-	dLng = lng2 - lng1;
-	sin_dLat = Math.sin(dLat/2.0);
-	sin_dLng = Math.sin(dLng/2.0);
-	a = (sin_dLat*sin_dLat) + (sin_dLng*sin_dLng*Math.cos(lat1)*Math.cos(lat2));
-	d = tsEarthR * (2 * Math.atan2(Math.sqrt(a),Math.sqrt(1.0-a)));
+	var dLat = lat2 - lat1;
+	var dLng = lng2 - lng1;
+	var sin_dLat = Math.sin(dLat/2.0);
+	var sin_dLng = Math.sin(dLng/2.0);
+	var a = (sin_dLat*sin_dLat) + (sin_dLng*sin_dLng*Math.cos(lat1)*Math.cos(lat2));
+	var d = tsEarthR * (2 * Math.atan2(Math.sqrt(a),Math.sqrt(1.0-a)));
 	return d;
 };
 

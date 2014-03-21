@@ -1,4 +1,4 @@
-
+"use strict";
 
 // Disable business poits
 var tsStyles =[
@@ -27,18 +27,25 @@ tsMain.initialize = function() {
 	this.map = new google.maps.Map(document.getElementById("map-canvas"),
 			this.mapOptions);
 	this.directionsService = new google.maps.DirectionsService();
+	google.maps.event.addListenerOnce(this.map, 'idle', this.mapReady );
 };
 
 tsMain.setCursor = function(cursor) {
 	this.map.setOptions({draggableCursor:cursor});
 };
 
+tsMain.mapReady = function() {
+	tsMain.elevationPlot = Object.create(tsElevationPlot);
+	//tsMain.elevationPlot.initialize([0,100,230],[10,15,4]);
+	
+};
+
+
+
 function tsInitialize() {
 	tsMain.initialize();
 	tsInitializeList();
 	tsInitializeControls();
-	tsMain.elevationPlot = Object.create(tsElevationPlot);
-	//tsMain.elevationPlot.initialize();
 }
 
 /*

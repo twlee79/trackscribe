@@ -1,3 +1,4 @@
+"use strict";
 
 /**
  * tsElement is a wrapper for an HTML element.
@@ -62,7 +63,7 @@ tsControlContainer.initialize  = function (id, controlPosition) {
 };
 
 tsControlContainer.addControl = function (id, Type, allowActivation) {
-	newControl = Type;
+	var newControl = Type;
 	newControl.initialize(id, this, allowActivation);
 	this.controls.push(newControl);
 	return newControl;
@@ -140,7 +141,7 @@ tsControl.setActiveSyle = function(status) {
  * Activate this control (deactiving others in same container).
  */
 tsControl.activate = function() {
-	lastControl = this.owner.activeControl;
+	var lastControl = this.owner.activeControl;
 	if (lastControl==this) return; // unchanged
 	
 	if (lastControl!=null) {
@@ -207,7 +208,7 @@ var tsDeleteNodeCtrl = Object.create(tsControl);
 
 tsDeleteNodeCtrl.activate = function() {
 	tsMain.setCursor('default'); 
-	lastControl = this.owner.activeControl;
+	var lastControl = this.owner.activeControl;
 	if (lastControl==this) {
 		// sdecond click on delete control = delete last node
 		tsPointList.deleteLastNode();
@@ -220,7 +221,7 @@ tsHeightCtrl.infoWindow = null;
 
 tsHeightCtrl.activate = function() {
 	tsMain.setCursor('default'); 
-	lastControl = this.owner.activeControl;
+	var lastControl = this.owner.activeControl;
 	if (lastControl==this) {
 		// second click on height = lookup all points
 		tsPointList.lookupHeight();

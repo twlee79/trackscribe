@@ -1,3 +1,5 @@
+"use strict";
+
 /**
  * Data stored in a linked list.
  * Each item in list is a node.
@@ -205,8 +207,8 @@ tsNode.autoRoute = function() {
 			tsInfoCtrl.setHTML (theRoute.warnings+"<BR>"+theRoute.copyrights);
 			
 			that.type = tsNodeTypes.ROUTED;
-			that.addOverlays(theMap);
-			this.updateHeight();
+			that.addOverlays(tsMain.map);
+			that.updateHeight();
 		};
 	});
 };
@@ -220,8 +222,6 @@ tsNode.clearOverlays = function() {
 };
 
 tsNode.addOverlays = function() {
-	
-	theMap = tsMain.map;
 	
 	this.clearOverlays();
 	
@@ -238,7 +238,7 @@ tsNode.addOverlays = function() {
 	var markerOptions = {
 		position : this.getTerminus(),
 		draggable : true,
-		map : theMap,
+		map : tsMain.map,
 		zIndex : 100,
 	};
 	markerOptions.icon = {
@@ -252,7 +252,7 @@ tsNode.addOverlays = function() {
 	};
 	var polylineOptions	= {
 		path : this.path,
-		map : theMap,
+		map : tsMain.map,
 		strokeColor : this.type.color,
 		strokeWeight : 2.0,
 		zIndex : 90,
@@ -395,7 +395,6 @@ tsPointList.calculateLength = function() {
 
 
 tsPointList.addPoint = function(latLng, addType) {
-	var theMap = tsMain.map;
 	var type = null;
 	var node = null;
 	if (this.head == null) { // any points so far?
@@ -432,7 +431,7 @@ tsPointList.addPoint = function(latLng, addType) {
 		}
 	}
 	
-	if (node) node.addOverlays(theMap);
+	if (node) node.addOverlays(tsMain.map);
 	return type; // return type, may be 'home'
 };
 
@@ -493,7 +492,7 @@ tsPointList.lookupHeight = function() {
 					console.log("End");
 				}
 			}
-			tsElevationPlot.initialize(dists,heights);
+			tsMain.elevationPlot.initialize(dists,heights);
 		}
 	});
 };
