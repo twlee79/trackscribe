@@ -19,14 +19,19 @@ function tsLookupDEM(latLng, latLngs, callback) {
 	var xhr = new XMLHttpRequest();
 	
 	xhr.ontimeout = function () {
+		//console.log("timeout");
 		callback(null,tsLookupStatus.REQ_TIMEOUT);
 	};
 
 	xhr.onerror = function(e) {
+		//console.log("error");
 		callback(null,tsLookupStatus.REQ_ERROR);
 	};
 
 	xhr.onload = function() {
+		//console.log("onload");
+		//console.log(xhr.readyState);
+		//console.log(xhr.status);
 		if (xhr.readyState === 4) { // DONE
 			if (xhr.status === 200) { // SUCCESS
 				var respBuffer = xhr.response;
@@ -42,14 +47,19 @@ function tsLookupDEM(latLng, latLngs, callback) {
 			            var q = respView.getInt32(i+8)*1.0e-3;
 			            var index = respView.getInt32(i+12);
 			            var latLng = new google.maps.LatLng(lat,lng);
-			            parsedData.push({latLng : latLng, q : q, index : index});
+			            latLng.height = q;
+			            latLng.index = index;
+			            //console.log(i,lat,lng,q,index);
+			            parsedData.push(latLng);
 					}
 					callback(parsedData,tsLookupStatus.SUCCESS);
 					
 				} else {
-					var q = respView.getInt32(i) * 1.0e-3;
+					var q = respView.getInt32(0) * 1.0e-3;
 					callback(q,tsLookupStatus.SUCCESS);
 				}
+			} else {
+				callback(null,tsLookupStatus.REQ_ERROR);
 			}
 		}
 	};
@@ -70,6 +80,7 @@ function tsLookupDEM(latLng, latLngs, callback) {
 		for (var i=0; i< numPoints; i++) {
 			reqView.setInt32(i*8, latLngs[i].lat() * 1.0e7);
 			reqView.setInt32(i*8 + 4, latLngs[i].lng() * 1.0e7);
+			//console.log(i,latLngs[i].lat(),latLngs[i].lng());
 		}
 	} else {
 		reqBuffer = new ArrayBuffer(8);
@@ -84,7 +95,7 @@ function tsLookupDEM(latLng, latLngs, callback) {
 
 var tsElevationPlot = {
 	offset : [0,0],
-	scale : [1,1],
+	scale : [0.2,1],
 	ticks : [200,5],
 	units : [1000,5],
 	unitNames : ['km','m'],
@@ -115,7 +126,9 @@ tsElevationPlot.getFixedAxisScale = function(min_value, max_value, tick_spacing,
 
 
 tsElevationPlot.getIdealAxisScale = function(min_value, max_value) {
-	console.assert(max_value>min_value);
+	console.assert(max_value>=min_value);
+	if (max_value==min_value) max_value+=1; // cheat to force algorithm to work when min==max
+	// TODO: fix algorithm to ensure it always returns an axis
 	
 	var tick_relspacings = [1,2,5];
 	var num_minor_ticks = [5,2,5];
@@ -167,27 +180,22 @@ tsElevationPlot.fit = function() {
 };
 
 
-tsElevationPlot.initialize = function(x_values,y_values) {
-	if (this.svg === null) {
+tsElevationPlot.update = function() {
+	if (this.svg == undefined) {
 		this.svg = SVG('elevationPlot').size('100%', '100%');
 		this.graph = this.svg.group();
 	}
 	
-	this.x_values = x_values;
-	this.y_values = y_values;
-	var min_y = Math.min.apply(Math,this.y_values);
-	var max_y = Math.max.apply(Math,this.y_values);
+	var extent = tsPointList.getExtent();
+	var min_y = extent.minHeight;
+	var max_y = extent.maxHeight;
 	if (!isFinite(min_y) || !isFinite(max_y)) {
-		// may occur if y array has zero length
+		// may occur if no heights defined
 		min_y = 0;
 		max_y = 100;
 	}
-	var min_x = 0;
-	var max_x = 1000;
-	if (this.x_values && this.x_values.length>0) {
-		min_x = this.x_values[0];
-		max_x = this.x_values[this.x_values.length-1];
-	}
+	var min_x = extent.minDist;
+	var max_x = extent.maxDist;
 	
 	/*
 	 * Terminology:
@@ -198,7 +206,7 @@ tsElevationPlot.initialize = function(x_values,y_values) {
 	var x, y; // reusable variables for holding temporary coordinates
 	var p, q;
 	var i;
-	var text, tspan, group,element;
+	var text,group;
 	var lastp, lastq;
 	
 	// axes
@@ -224,6 +232,7 @@ tsElevationPlot.initialize = function(x_values,y_values) {
 	var font_family = 'Helvetica';
 	var font_size = 12;
 	var symbol_size = 10;
+	var line_stroke = 1;
 	
 	if (this.axis_x.svg_group) this.axis_x.svg_group.clear();
 	else this.axis_x.svg_group = this.graph.group();
@@ -244,9 +253,9 @@ tsElevationPlot.initialize = function(x_values,y_values) {
 	for (x=this.axis_x.scale.min; x<=this.axis_x.scale.max; x+=this.axis_x.scale.major) {
 		p = this.x2p(x);
 		group.line(p, min_q, p, min_q+majortick_size).stroke({ width: majortick_stroke });
-		tspan = text.tspan(x);
-		tspan.x(p + ticklabelx_adj[0]);
-		tspan.y(min_q + majortick_size + ticklabelx_adj[1]);
+		text.tspan(x)
+			.x(p + ticklabelx_adj[0])
+			.y(min_q + majortick_size + ticklabelx_adj[1]);
 		if (x<this.axis_x.scale.max)
 			for (i=1; i<this.axis_x.scale.num_minor; i++) {
 				p = this.x2p(x + i*this.axis_x.scale.minor);
@@ -274,9 +283,9 @@ tsElevationPlot.initialize = function(x_values,y_values) {
 	for (y=this.axis_y.scale.min; y<=this.axis_y.scale.max; y+=this.axis_y.scale.major) {
 		q = this.y2q(y);
 		group.line(min_p, q, min_p-majortick_size, q).stroke({ width: majortick_stroke });
-		tspan = text.tspan(y);
-		tspan.x(min_p - majortick_size + ticklabely_adj[0]);
-		tspan.y(q + font_size/2 + ticklabely_adj[1]);
+		text.tspan(y)
+			.x(min_p - majortick_size + ticklabely_adj[0])
+			.y(q + font_size/2 + ticklabely_adj[1]);
 		if (y<this.axis_y.scale.max)
 			for (i=1; i<this.axis_y.scale.num_minor; i++) {
 				q = this.y2q(y + i*this.axis_y.scale.minor);
@@ -284,26 +293,47 @@ tsElevationPlot.initialize = function(x_values,y_values) {
 			}
 	}
 	
-	// draw points
-	if (this.svg_points) this.svg_points.clear();
-	else this.svg_points = this.graph.group();
-	
-	group = this.svg_points = this.graph.group();
-	for (i=0;i<this.x_values.length;i++) {
-		x = this.x_values[i];
-		y = this.y_values[i];
-		p = this.x2p(x);
-		q = this.y2q(y);
-		group.circle(symbol_size)
-			 .cx(p)
-			 .cy(q);
-	}
-	
 	// draw line
 	if (this.svg_lines) this.svg_lines.clear();
 	else this.svg_lines = this.graph.group();
 	
 	group = this.svg_lines = this.graph.group();
+	var curNode = tsPointList.head;
+	while (curNode!=null) {
+		color = curNode.type.color;
+		var lastLatLng = null;
+		var latLng;
+		
+		for (var i = 0; i < curNode.path.getLength(); i++) {
+			latLng = curNode.path.getAt(i);
+			var numChildren = 0;
+			if (i<curNode.path.getLength()-1 && latLng.children) // non-terminal and have children
+				numChildren = latLng.children.length;
+					// note: terminal points shared with first point of next node
+					// do not draw lines for terminal points chilldren
+			for (var j=-1; j<numChildren;j++) {
+				var curLatLng;
+				if (j<0) curLatLng = latLng;
+				else curLatLng = latLng.children[j];
+				
+				if (curLatLng.height == null) {
+					lastLatLng = null;
+					continue;
+				}
+				if (lastLatLng) {
+					// if get here both last and cur latLng height is defined 
+					group.line(this.x2p(lastLatLng.cumulLength), this.y2q(lastLatLng.height),
+							   this.x2p(curLatLng.cumulLength), this.y2q(curLatLng.height))
+						 .stroke({width: line_stroke,
+							 	  color: color});
+				}
+				lastLatLng = curLatLng;
+			}
+			
+		}
+		curNode = curNode.next;
+	}
+	/*
 	lastp = null;
 	for (i=0;i<this.x_values.length;i++) {
 		x = this.x_values[i];
@@ -315,7 +345,92 @@ tsElevationPlot.initialize = function(x_values,y_values) {
 		}
 		lastp = p;
 		lastq = q;
+	}*/
+
+	// draw points
+	if (this.svg_points) this.svg_points.clear();
+	else this.svg_points = this.graph.group();
+	
+	group = this.svg_points = this.graph.group();
+
+	
+	/*
+	while (curNode!=null) {
+		for (var i = 0; i < curNode.path.getLength(); i++) {
+			var latLng = curNode.path.getAt(i);
+			if (latLng.children) for (var j = 0; j < latLng.children.length; j++) {
+			}
+		}
+		curNode = curNode.next;
 	}
+	*/
+	
+	var text = group.text(function(obj) {
+		  obj.tspan("");
+		});
+	text.build(true);
+	text.font({
+		  family:   font_family,
+		  size:     font_size,
+		  anchor:   'middle'
+		});
+		
+	
+	var curNode = tsPointList.head;
+	var color;
+	var latLng;
+	while (curNode!=null) {
+		color = curNode.type.color;
+		/*{
+			q = this.y2q(this.axis_y.scale.min);
+			text.tspan("?")
+				.x(p)
+				.y(q);
+			
+		}*/
+		switch (curNode.type) {
+			case tsNodeTypes.HOME:
+				// do not draw home node
+				break;
+			case tsNodeTypes.MANUAL:
+				for (var i = 0; i < curNode.path.getLength()-1; i++) {
+					// for all intermediate points
+					latLng = curNode.path.getAt(i);
+					y = latLng.height;
+					if (y != null) {
+						x = latLng.cumulLength;
+						p = this.x2p(x);
+						q = this.y2q(y);
+						group.circle(symbol_size)
+							 .cx(p)
+							 .cy(q)
+							 .fill({color: 'white'})
+							 .stroke({color: color});
+					}
+					
+				}
+				// no break: continue to next block for drawing terminus
+			case tsNodeTypes.TOROUTE:
+			case tsNodeTypes.ROUTED:
+				latLng = curNode.getTerminus();
+				y = latLng.height;
+				if (y != null) {
+					x = latLng.cumulLength;
+					p = this.x2p(x);
+					q = this.y2q(y);
+					//group.circle(symbol_size)
+					group.rect(symbol_size,symbol_size)
+						 .cx(p)
+						 .cy(q)
+						 .fill({color: color});
+				}
+				break;
+		}
+		curNode = curNode.next;
+	}
+	text.build(false);
+
+
 
 	this.fit();
 };

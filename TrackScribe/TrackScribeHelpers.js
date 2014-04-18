@@ -12,7 +12,7 @@ function tsDebugInfo(msg) {
 
 function tsWarning(msg) {
 	msg = "Warning! "+msg;
-	window.alert(msg);
+	//window.alert(msg);
 	console.log(msg);
 };
 
@@ -20,6 +20,7 @@ function tsError(msg) {
 	msg = "ERROR! "+msg;
 	window.alert(msg);
 	console.log(msg);
+	throw Error(msg);
 };
 
 /**
@@ -123,6 +124,16 @@ function tsGetISOTime() {
         + ':' + tsPadTime(localTime.getSeconds()) 
         + tzSign + tsPadTime(tzOffset / 60) + tsPadTime(tzOffset % 60);
 
+}
+
+/**
+ * Compares two latLng's for equality with a precision of 1e-6 (~0.11m)
+ * @param latLng1
+ * @param latLng2
+ */
+function tsLatLngEquals(latLng1, latLng2) {
+	return Math.abs(latLng1.lat()-latLng2.lat())<1e-6 &&
+		   Math.abs(latLng1.lng()-latLng2.lng())<1e-6;
 }
 
 

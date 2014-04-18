@@ -19,142 +19,210 @@ var tsNodeTypes = {
 
 var tsNodeTypesRev = tsGenerateReverseDict(tsNodeTypes);
 
-var tsException = {
-	INVALIDNODE : new Error("Invalid node")
-};
-
 
 var tsNode = {
-	// data
-	type : null,
-	path : null,
-	pathLength : 0,
-	cumulLength : 0,
-	
-	// elevation data
-	pathHeight : null,
-
-	// for overlays
-	marker : null,
-	polyline : null,
-	kmMarkers : null,
-	
-	// for linked-list
-	previous : null, // use setPrevious to set
-	next : null,
 	owner : null,
 };
 
 tsNode.initialize  = function (type, latLng) {
+	// data
 	this.type = type;
 	this.path = new google.maps.MVCArray();
-	this.pathHeight = [];
 	this.path.push(latLng);
+	this.cumulLength = 0;
+	
+	// state
+	this.editing = false; // do not update while true
+	this.startEditing();
+	
+	// for overlays
+	this.marker = null;
+	this.polyline = null;
+	this.kmMarkers = null;
+	
+	// for linked-list
+	this.previous = null; // use setPrevious to set correctly
+	this.next = null;
+	//this.owner = null;
 };
 
 
 tsNode.clear = function() {
 	// ensure all contents reset for to allow deletion
-	this.previous = this.next = null;
-	this.path = this.type = null;
-	this.pathLength = null;
+	this.editing = true;
+	this.type = null;
+	this.clearPath();
 	this.clearOverlays();
-	this.clearKmMarkers();
-	
+	this.previous = this.next = this.owner = null;
 };
 
-tsNode.updateHeight = function() {
-	// update height array, should be called every time this.path is altered
-	this.pathHeight.length = 0; // reset array 
-	// TODO: more intelligent discarding of only affected points
+tsNode.clearPath = function() {
+	// remove and invalidate path, incl. removal of any listeners
+	google.maps.event.clearInstanceListeners(this.path);
+	this.path.clear();
+	this.path = null;
 };
 
-tsNode.calculateLength = function() {
-	var prevNodeCumulLength = 0;
-	if (this.previous) prevNodeCumulLength = this.previous.cumulLength;
-	this.pathLength = 0;
-	var lastPointCumulLength = prevNodeCumulLength;
-	var markerEvery = 1000.0; // metres
-	this.clearKmMarkers();
-	if (this.path) { // TODO: why is this check here?
-		for (var i = 1; i < this.path.getLength(); i++) {
-			var latLng1 = this.path.getAt(i-1);
-			var latLng2 = this.path.getAt(i);
-			this.pathLength += tsComputeDistBtw(latLng1, latLng2);
-			var curPointCumulLength = this.pathLength + prevNodeCumulLength;
-			var lastFloorKm = Math.floor(lastPointCumulLength/markerEvery);
-			var curFloorKm = Math.floor(curPointCumulLength/markerEvery);
-			
-			// do we need to add a km marker?
-			while (lastFloorKm<curFloorKm) {
-				// look for all transitions in floor after dividing by markerEvery length e.g. 2>4 km, need markers for 3,4 
-				lastFloorKm = lastFloorKm+1;
-				
-				var kmMarkerLatLng = tsComputeOffset(latLng1, latLng2, lastFloorKm*markerEvery-lastPointCumulLength);
-				var kmMarkerImage = "markers/marker_"+lastFloorKm+".png";
-				var kmMarkerOptions = {
-					position : kmMarkerLatLng,
-					map : tsMain.map,
-					icon: kmMarkerImage,
-				};
-				if (!this.kmMarkers) this.kmMarkers = [];
-				this.kmMarkers.push(new google.maps.Marker(kmMarkerOptions));
-				
-				// TODO: do we need km marker height?
-				
-			}
-			lastPointCumulLength = curPointCumulLength;
-		}
+tsNode.clearOverlays = function() {
+	// remove and invalidate any previous marker, polyline
+	// or km marker overlays
+	// incl. removal of any listeners
+	if (this.marker) {
+		google.maps.event.clearInstanceListeners(this.marker);
+		this.marker.setMap(null);
 	}
-	this.cumulLength = prevNodeCumulLength + this.pathLength;
-	if (this.next) this.next.calculateLength(); // update next length
-	else this.owner.calculateLength(); // terminus update length of owning list
+	if (this.polyline) {
+		google.maps.event.clearInstanceListeners(this.polyline);
+		this.polyline.setMap(null);
+	}
+	this.marker = null;
+	this.polyline = null;
+	this.clearKmMarkers();
 };
 
 tsNode.clearKmMarkers = function() {
+	// remove and invalidate any previous km marker overlays
 	if (this.kmMarkers) {
 		for (var i = 0; i < this.kmMarkers.length; i++) {
 			this.kmMarkers[i].setMap(null);
+			// no listeners for km markers
 		}
 		this.kmMarkers.length = 0; // clear array
 	}
 };
 
 /**
+ * Call to prevent updating of this node (until stopEditing called).
+ */
+tsNode.startEditing = function() {
+	this.editing = true;
+};
+
+/**
+ * Call to allow updating of this node once again.
+ */
+tsNode.stopEditing = function() {
+	this.editing = false;
+};
+
+/**
+ * Update/recalculate various parameters of this node.
+ * Will automatically update downstream nodes if required.
+ */
+tsNode.update = function() {
+	if (!this.editing) {
+		this.calculateLength();
+		tsMain.elevationPlot.update();
+		console.log("updating");
+	}
+};
+
+tsNode.calculateLength = function() {
+	// Remember: Node has path of points, and each point may have an array of interpolated points
+	
+	var markerEvery = 1000.0; // metres
+	this.clearKmMarkers();
+
+	var prevNodeCumulLength = 0;
+	if (this.previous) prevNodeCumulLength = this.previous.cumulLength;
+	
+	var lastPointCumulLength = prevNodeCumulLength; // used for calc's involving km markers 
+
+	var lastPointLatLng = null;
+	for (var i = 0; i < this.path.getLength(); i++) {
+
+		var curPointLatLng = this.path.getAt(i);
+		var curPointCumulLength = lastPointCumulLength;
+		if (lastPointLatLng) {
+			// find length from previous, add to cumul total for path
+			curPointCumulLength += tsComputeDistBtw(lastPointLatLng, curPointLatLng);
+		}
+		curPointLatLng.cumulLength = curPointCumulLength;  
+
+		if (curPointLatLng.children) {
+			// if have children, calc cumul length for each child
+			var lastChildLatLng = curPointLatLng;
+			var childCumulLength = curPointCumulLength;  // used for tracking length of interpolated children within a path point
+			for (var j=0; j<curPointLatLng.children.length;j++) {
+				var curChildLatLng = curPointLatLng.children[j];
+				childCumulLength+=tsComputeDistBtw(lastChildLatLng, curChildLatLng);
+				curChildLatLng.cumulLength = childCumulLength; 
+				lastChildLatLng = curChildLatLng;
+			}
+		}
+
+		var lastFloorKm = Math.floor(lastPointCumulLength/markerEvery);
+		var curFloorKm = Math.floor(curPointCumulLength/markerEvery);
+		
+		// do we need to add a km marker?
+		while (lastFloorKm<curFloorKm) {
+			// look for all transitions in floor after dividing by markerEvery length e.g. 2>4 km, need markers for 3,4 
+			lastFloorKm = lastFloorKm+1;
+			
+			var kmMarkerLatLng = tsComputeOffset(lastPointLatLng, curPointLatLng, lastFloorKm*markerEvery-lastPointCumulLength);
+			var kmMarkerImage = "markers/marker_"+lastFloorKm+".png";
+			var kmMarkerOptions = {
+				position : kmMarkerLatLng,
+				map : tsMain.map,
+				icon: kmMarkerImage,
+			};
+			if (!this.kmMarkers) this.kmMarkers = [];
+			this.kmMarkers.push(new google.maps.Marker(kmMarkerOptions));
+			
+			// TODO: do we need km marker height?
+			
+		}
+		
+		// update for next iteration
+		lastPointLatLng = curPointLatLng;
+		lastPointCumulLength = curPointCumulLength;
+	}
+	this.cumulLength = curPointCumulLength; // node stores cumul length of last point
+	if (this.next) this.next.calculateLength(); // update next length
+	else this.owner.calculateLength(); // terminus: update length of owning list
+};
+
+/**
  * Sets previous and also adds previous as item 0 in this polyline
  */
 tsNode.setPrevious = function(prevNode) {
+	this.startEditing();
 	this.previous = prevNode;
 	this.path.insertAt(0,prevNode.getTerminus());
-	this.calculateLength(); //TODO: should this be done here?
+	this.stopEditing();
 };
 
 /**
  * Update terminus location, also change next's (if any) first point
  */
 tsNode.updateTerminus = function(latLng) {
+	this.startEditing();
 	this.path.setAt(this.path.getLength()-1,latLng);
 	this.updatePosition();
 	if (this.next) {
+		this.next.startEditing();
 		this.next.path.setAt(0,latLng);
 		this.next.updatePosition(); 
+		this.next.stopEditing();
+		// update from this (below) propagates to this.next
 	}
-	this.calculateLength();
-	this.updateHeight();
+	this.stopEditing();
+	this.update();
 };
 
 tsNode.updatePosition = function() {
 	if (this.type==tsNodeTypes.TOROUTE || this.type==tsNodeTypes.ROUTED ) {
+		this.startEditing();
 		this.type = tsNodeTypes.TOROUTE;
-		this.clearOverlays();
 		var origin = this.path.getAt(0);
 		var terminus = this.path.pop();
 		this.path.clear();
 		this.path.push(origin);
 		this.path.push(terminus);
+		this.updateOverlays(); 
 		this.autoRoute();
-		this.addOverlays(); 
-		this.updateHeight();
+		this.stopEditing();
+		
 	}
 
 };
@@ -165,16 +233,14 @@ tsNode.getTerminus = function() {
 };
 
 tsNode.addPoint = function(latLng) {
-	if (this.type==tsNodeTypes.DUMMY) throw tsException.INVALIDNODE;
-	var newLength= this.path.push(latLng);
+	if (this.type==tsNodeTypes.DUMMY) tsError("Invalid node");
+	var newLength = this.path.push(latLng);
 	if (this.marker) this.marker.setPosition(this.getTerminus());
-	this.calculateLength();
-	this.updateHeight();
-	return newLength; 
+	return newLength;
+	// update handle by path listener
 };
 
 tsNode.autoRoute = function() {
-	// TODO: CHECK if path is valid?
 	var request = {
 		origin : this.path.getAt(0),
 		destination : this.path.getAt(1),
@@ -185,45 +251,43 @@ tsNode.autoRoute = function() {
 	tsMain.directionsService.route(request, function(response, status) {
 		if (status != google.maps.DirectionsStatus.OK) {
             tsWarning("Direction service failed due to: " + status);
+            // TODO: more handling here
+		} if (request.destination!==that.path.getAt(1)) {
+			tsWarning("Path changed during auto-route request");
 		} else {
-			that.clearOverlays();
+			that.startEditing();
 			var origin = that.path.getAt(0);
 			that.path.clear();
 			var theRoute = response.routes[0];
 			var theRouteLeg = theRoute.legs[0];
-			if (!theRouteLeg.start_location.equals(origin)) that.path.push(origin); 
-				// start_location may not equal origin due to 'rounding' to nearest road
-				// add origin if needed
+			var lastLatLng;
+			that.path.push(origin); // add origin, may not equal origin due to 'rounding' to nearest road
+			lastLatLng = origin;
 			var theSteps = theRouteLeg.steps;
 			for (var i = 0; i<theSteps.length; i++) {
 				var stepPath = theSteps[i].path;
 				for (var j = 0; j<stepPath.length; j++) {
-					
-					that.path.push(stepPath[j]);
-					
+					var curLatLng = stepPath[j];
+					if (!tsLatLngEquals(lastLatLng,curLatLng)) that.path.push(curLatLng);
+					// else console.log("skippping",lastLatLng,curLatLng);
+						// only store unique points (i.e. not 'equal' to previous)
+					lastLatLng = curLatLng;
 				};
 				
 			}
 			tsInfoCtrl.setHTML (theRoute.warnings+"<BR>"+theRoute.copyrights);
 			
 			that.type = tsNodeTypes.ROUTED;
-			that.addOverlays(tsMain.map);
-			that.updateHeight();
+			that.stopEditing();
+			that.updateOverlays(tsMain.map);
+			that.update();
 		};
 	});
 };
 
-tsNode.clearOverlays = function() {
-	 // remove and invalidate any previous overlays
-	if (this.marker) this.marker.setMap(null);
-	if (this.polyline) this.polyline.setMap(null);
-	this.marker = null;
-	this.polyline = null;
-};
 
-tsNode.addOverlays = function() {
+tsNode.updateOverlays = function() {
 	
-	this.clearOverlays();
 	
 	var arrowSymbol = {
 	    path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
@@ -300,11 +364,15 @@ tsNode.addOverlays = function() {
 			
 			break;
 	}
-	if (polylineOptions) {
+	if (this.polyline) {
+		this.polyline.setOptions(polylineOptions);
+	} else {
 		this.polyline = new google.maps.Polyline(polylineOptions);
 		this.addPolylineListeners();
 	}
-	if (markerOptions) {
+	if (this.marker) {
+		this.marker.setOptions(markerOptions);
+	} else {
 		this.marker = new google.maps.Marker(markerOptions);
 		this.addMarkerListeners();
 	}
@@ -312,14 +380,35 @@ tsNode.addOverlays = function() {
 
 tsNode.addPolylineListeners = function() {
 	var that = this;
-	var pathEdited = function(mouseEvent) {
-		that.calculateLength();
-		that.updateHeight();
+	var pathEdited = function() {
+		that.update();
 	};
-	google.maps.event.addListener(this.polyline, "dragend", pathEdited);
-    google.maps.event.addListener(this.polyline.getPath(), "insert_at", pathEdited);
-    google.maps.event.addListener(this.polyline.getPath(), "remove_at", pathEdited);
-    google.maps.event.addListener(this.polyline.getPath(), "set_at", pathEdited);		
+	
+	/*
+	google.maps.event.addListener(this.polyline, "dragend", function() {
+		console.log("path dragend");
+		pathEdited();
+	});*/
+    google.maps.event.addListener(this.path, "insert_at", function(index) {
+    	console.log("path insert", index);
+		pathEdited();
+	});
+    google.maps.event.addListener(this.path, "remove_at", function(index, element) {
+    	console.log("path remove", index);
+    	console.log(that.path.getAt(index));
+		pathEdited();
+	});
+    google.maps.event.addListener(this.path, "set_at", function(index, element) {
+    	console.log("path set", index);
+    	console.log(that.path.getAt(index));
+    	if (index>0) {
+    		var prevLatLng = that.path.getAt(index-1); 
+    		prevLatLng.height = null;
+    		if (prevLatLng.children) prevLatLng.children.length = 0;
+    	}
+		pathEdited();
+	});
+		
 };
 
 tsNode.addMarkerListeners = function() {
@@ -335,7 +424,7 @@ tsNode.addMarkerListeners = function() {
 var tsPointList = {
 	head : null,
 	tail : null,
-	pathLength : 0,
+	totalLength : 0,
 };
 tsNode.owner = tsPointList; // only one list for so all nodes belong to it
 
@@ -345,17 +434,47 @@ tsNode.owner = tsPointList; // only one list for so all nodes belong to it
  */
 tsPointList.push = function(node) {
 
-	if (this.tail != null) { 
+	if (this.tail !== null) { 
 		var oldTail = this.tail;
 		oldTail.next = node;
 		node.setPrevious(oldTail);
 	}
 	this.tail = node;
-	if (this.head == null) this.head = node;
+	if (this.head === null) this.head = node;
 };
 
 tsPointList.clear = function() {
 	while (this.head) tsPointList.deleteLastNode();	
+};
+
+tsPointList.getExtent = function() {
+	this.head.calculateLength(); // recalc. all lengths, REMOVE to more efficient
+	var curNode = this.head;
+	var minHeight = +Infinity;
+	var maxHeight = -Infinity;
+	
+	while (curNode!=null) {
+		for (var i = 0; i < curNode.path.getLength(); i++) {
+			var latLng = curNode.path.getAt(i);
+			if (latLng.height<minHeight) minHeight = latLng.height; 
+			if (latLng.height>maxHeight) maxHeight = latLng.height;
+			if (latLng.children) for (var j = 0; j < latLng.children.length; j++) {
+				var childLatLng = latLng.children[j];
+				if (childLatLng.height<minHeight) minHeight = childLatLng.height;
+				if (childLatLng.height>maxHeight) maxHeight = childLatLng.height;
+			}
+		}
+		curNode = curNode.next;
+	}
+	var minDist = 0.0;
+	var maxDist = this.tail ? Math.max(this.tail.getTerminus().cumulLength,1000.0) : 1000.0;
+	return {
+		minDist : minDist,
+		maxDist : maxDist,
+		minHeight : minHeight,
+		maxHeight : maxHeight
+	};
+	
 };
 
 tsPointList.isEmpty = function() {
@@ -383,13 +502,9 @@ tsPointList.deleteLastNode = function() {
 };
 
 tsPointList.calculateLength = function() {
-	var node = this.head;
-	this.pathLength = 0;
-	while (node!=null) {
-		this.pathLength += node.pathLength;
-		node = node.next;
-	}
-	tsDistanceCtrl.update(this.pathLength/1000.0);
+	this.totalLength = 0;
+	if (this.tail) this.totalLength = this.tail.cumulLength;
+	tsDistanceCtrl.update(this.totalLength/1000.0);
 	
 };
 
@@ -431,7 +546,11 @@ tsPointList.addPoint = function(latLng, addType) {
 		}
 	}
 	
-	if (node) node.addOverlays(tsMain.map);
+	if (node) {
+		node.stopEditing();
+		node.updateOverlays(tsMain.map);
+		node.update();
+	}
 	return type; // return type, may be 'home'
 };
 
@@ -447,53 +566,80 @@ tsPointList.addRoutedPoint = function(latLng) {
 	return this.addPoint(latLng,tsNodeTypes.TOROUTE);
 };
 
+tsPointList.update = function() {
+	if (this.head) this.head.update(); // quick fix // TODO: proper update
+}
+
 tsPointList.lookupHeight = function() {
+	
 	var curNode = this.head;
-	var lastLatLng = null;
-	var latLng;
 	var latLngs = [];
+	var that = this;
+	if (this.pendingDEMLookup) return;
+	console.trace();
 	
 	// generate an array of points to lookup from whole list 
 	while (curNode!=null) {
-		if (curNode.path) {
-			for (var i = 0; i < curNode.path.getLength(); i++) {
-				latLng = curNode.path.getAt(i);
-				if (!latLng.equals(lastLatLng)) { // only process unique points, last point of node x and first point of node x+1 are identical
-					latLngs.push(latLng);
-				}
-				lastLatLng = latLng;
+		var lastLatLng = null;
+		var latLng;
+		for (var i = 0; i < curNode.path.getLength(); i++) {
+			latLng = curNode.path.getAt(i);
+			if (lastLatLng && (lastLatLng.height == null || latLng.height == null)) {
+				// if either end of this pair of latLngs has no height
+				// then need to lookup
+				latLngs.push(lastLatLng);
+				latLngs.push(latLng);
+				//console.log(i,lastLatLng.lat(),lastLatLng.lng(),latLng.lat(),latLng.lng());
 			}
+			lastLatLng = latLng;
+			
 		}
 		curNode = curNode.next;
 	}
+	if (latLngs.length==0) return; 
+	this.pendingDEMLookup = true;
 	tsLookupDEM(null,latLngs, function(lookupResult, lookupStatus) {
 		if (lookupStatus==tsLookupStatus.SUCCESS) {
-			var cumulDist = 0.0;
-			var latLng;
-			var lastLatLng = null;
-			var dists = [];
-			var heights = [];
-			for (var i=0; i< lookupResult.length; i++) {
-				var lookupElement = lookupResult[i]; // has latLng, q (height), index
-				latLng = lookupElement.latLng;
-				if (lastLatLng) {
-					cumulDist+=tsComputeDistBtw(latLng, lastLatLng);
+			var query_i;
+			var queryLatLng;
+			query_i = 0;
+			for (var result_i=0; result_i< lookupResult.length; result_i++) {
+				var resultLatLng = lookupResult[result_i]; // result is an array of latLngs decorated with index and height
+				console.log(result_i,resultLatLng.lat(),resultLatLng.lng(),resultLatLng.height,resultLatLng.index)
+				if (resultLatLng.index==0) {
+					// first point in returned DEM lookup = start point
+					queryLatLng = latLngs[query_i];
+					if (!tsLatLngEquals(queryLatLng,resultLatLng)) {
+						//console.log(queryLatLng.lat(),queryLatLng.lng());
+						//console.log(resultLatLng.lat(),resultLatLng.lng());
+						tsError("Query/response latlng do not match");
+					}
+					console.assert (queryLatLng.height == null || queryLatLng.height == resultLatLng.height);
+					queryLatLng.height = resultLatLng.height;
+					console.assert(!queryLatLng.children || queryLatLng.children.length==0);
+					console.log("start");
 				}
-				lastLatLng = latLng;
-				//console.log(lookupElement);
-				dists.push(cumulDist);
-				heights.push(lookupElement.q);
-				console.log(cumulDist,lookupElement.q);
-				if (lookupElement.index==0) {
-					console.log("Start");
-				}
-				// TODO start of next == end of prev
-				if (lookupElement.index<0) {
+				else if (resultLatLng.index<0) {
+					// last point in returned DEM lookup = end point
+					query_i++; 
+					queryLatLng = latLngs[query_i];
+					console.assert (queryLatLng.height == null || queryLatLng.height == resultLatLng.height); 
+					queryLatLng.height = resultLatLng.height; 
+					query_i++; 
 					console.log("End");
+					continue;
+				} else {
+					// interpolated point in DEM lookup
+					if (queryLatLng.children == null) queryLatLng.children = [];
+					queryLatLng.children.push(resultLatLng);
 				}
+				
 			}
-			tsMain.elevationPlot.initialize(dists,heights);
+			that.update();
+		} else {
+			tsWarning(lookupStatus.details);
 		}
+		that.pendingDEMLookup = false;
 	});
 };
 
@@ -613,7 +759,7 @@ tsPointList.fromCSV = function(csv) {
 		    		var node = Object.create(tsNode);
 					node.initialize(type, latLng);
 					this.push(node);
-					node.addOverlays(tsMain.map);
+					node.updateOverlays(tsMain.map);
 				}
 	    	}
     	}
