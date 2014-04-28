@@ -1,5 +1,6 @@
 "use strict";
 
+var tsDebug = true;
 var tsDeg2Rad = Math.PI/180.0;
 var tsRad2Deg = 180.0/Math.PI;
 var tsEarthR = 6378137; // radius of earth in metres
@@ -12,7 +13,7 @@ function tsDebugInfo(msg) {
 
 function tsWarning(msg) {
 	msg = "Warning! "+msg;
-	//window.alert(msg);
+	if (tsDebug) window.alert(msg);
 	console.log(msg);
 };
 
@@ -22,6 +23,11 @@ function tsError(msg) {
 	console.log(msg);
 	throw Error(msg);
 };
+
+function tsAssert(condition, msg) {
+	if (tsDebug && !condition) window.alert("Assertion failed: "+msg);
+	console.assert(condition,msg);
+}
 
 /**
  * Multiply a CSS length string by a factor, enforcing min or max if specified.

@@ -179,6 +179,13 @@ tsElevationPlot.fit = function() {
 
 };
 
+tsElevationPlot.updateXAxis = function() {
+	
+};
+
+tsElevationPlot.updateYAxis = function() {
+	
+};
 
 tsElevationPlot.update = function() {
 	if (this.svg == undefined) {
@@ -298,9 +305,11 @@ tsElevationPlot.update = function() {
 	else this.svg_lines = this.graph.group();
 	
 	group = this.svg_lines = this.graph.group();
+	
 	var curNode = tsPointList.head;
 	while (curNode!=null) {
-		color = curNode.type.color;
+		//color = curNode.type.color;
+		color = "red"
 		var lastLatLng = null;
 		var latLng;
 		
@@ -332,6 +341,19 @@ tsElevationPlot.update = function() {
 			
 		}
 		curNode = curNode.next;
+	}
+	var next;
+	for (tsListIterator.reset();  next = tsListIterator.next3d(), !next.done;) {
+		color = tsListIterator.curNode.type.color;
+		var lastLatLng = tsListIterator.prevIterPoint;
+		var curLatLng = tsListIterator.curIterPoint;
+
+		if (lastLatLng && lastLatLng.height && curLatLng.height) {
+			group.line(this.x2p(lastLatLng.cumulLength), this.y2q(lastLatLng.height),
+					   this.x2p(curLatLng.cumulLength), this.y2q(curLatLng.height))
+				 .stroke({width: line_stroke,
+					 	  color: color});
+		}
 	}
 	/*
 	lastp = null;
@@ -376,11 +398,13 @@ tsElevationPlot.update = function() {
 		});
 		
 	
+
 	var curNode = tsPointList.head;
 	var color;
 	var latLng;
 	while (curNode!=null) {
-		color = curNode.type.color;
+		//color = curNode.type.color;
+		color = "red";
 		/*{
 			q = this.y2q(this.axis_y.scale.min);
 			text.tspan("?")
@@ -428,6 +452,65 @@ tsElevationPlot.update = function() {
 		}
 		curNode = curNode.next;
 	}
+
+	
+	
+	var latLng;
+	for (tsListIterator.reset();  next = tsListIterator.next2d(), !next.done;) {
+		var curNode = tsListIterator.curNode;
+		var color = curNode.type.color;
+		var latLng = next.value;
+		/*{
+			q = this.y2q(this.axis_y.scale.min);
+			text.tspan("?")
+				.x(p)
+				.y(q);
+			
+		}*/
+		switch (curNode.type) {
+			case tsNodeTypes.HOME:
+				// do not draw home node
+				break;
+			case tsNodeTypes.MANUAL:
+				if (!tsListIterator.curPointIsTerminal) {
+					// for all intermediate points
+					y = latLng.height;
+					if (y != null) {
+						x = latLng.cumulLength;
+						p = this.x2p(x);
+						q = this.y2q(y);
+						group.circle(symbol_size)
+							 .cx(p)
+							 .cy(q)
+							 .fill({color: 'white'})
+							 .stroke({color: color});
+					}
+					
+				}
+				// no break: continue to next block for drawing terminus
+			case tsNodeTypes.TOROUTE:
+			case tsNodeTypes.ROUTED:
+				if (tsListIterator.curPointIsTerminal) {
+	
+					//latLng = curNode.getTerminus();
+					y = latLng.height;
+					if (y != null) {
+						x = latLng.cumulLength;
+						p = this.x2p(x);
+						q = this.y2q(y);
+						//group.circle(symbol_size)
+						group.rect(symbol_size,symbol_size)
+							 .cx(p)
+							 .cy(q)
+							 .fill({color: color});
+					}
+					break;
+				}
+		}
+		curNode = curNode.next;
+	}
+	
+	
 	text.build(false);
 
 

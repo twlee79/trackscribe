@@ -1,72 +1,142 @@
 "use strict";
 
+//TODO: auto-route TOROUTE, height lookup?
+
 /**
- * Data stored in a linked list.
- * Each item in list is a node.
- * Node contains a path, which is an array of LatLng coords.
- * Path shown as a polyline, with last point (terminus) a marker.
+ * This file contains implementation of the data structures used for TrackScribe.
+ * 
+ * Top-level data structure is a linked list of nodes.
+ * 
+ * Each node contains a path, which is an array of LatLng coordinates. 
+ * The first node is a HOME node and contains a single point in the path. 
+ * In all other nodes, the first point of the node is shared (same LatLng object)
+ * with the terminal path point of the previous node.
+ * 
+ * Each LatLng coordinate may contain a series of child points, which are a series
+ * of points generated when doing elevation lookup - these points should in collinear
+ * from point to next point in x,y plane (on a mercator projection) but contain
+ * different heights.
+ * 
+ *   
+ */
+
+
+/**
+ * Enum-link of possible node types.
+ * 
+ */
+var tsNodeTypes = {
+	PATH: 		{value:-11, name: "Path point"							}, // not a real node 'type, used for file reading/writing
+	HOME: 		{value:  1, name: "Home node", 	 	color : "darkblue"	}, // first node, has a one point path
+	MANUAL: 	{value: 10, name: "Manual node", 	color : "skyblue"	}, // manually draw path
+	TOROUTE: 	{value: 20, name: "Node to route", 	color : "mediumblue"}, // auto-routed, awaiting route return
+	ROUTED: 	{value: 21, name: "Routed node", 	color : "mediumblue"}, // auto-routed, 
+};
+
+var tsNodeTypesRev = tsGenerateReverseDict(tsNodeTypes); // allow reverse lookup of node types
+
+
+/**
+ * tsNode is an element of the top-level link list.
+ * Contains:
+ *  references for linked-list implementation
+ * 	type
+ *  path - array of LatLng coords, implemented as google MVCArray
+ *  other data - e.g. length
+ *  overlays and state - for display on map and controlling behaviour
+ *  
+ * Note that terminal point in path of one node is used also as first point
+ * in path of next node.
+ * 
+ * For all nodes, the path is displayed as a polyline. Terminal point is shown
+ * as a marker that can be moved. As terminal point is shared with first point
+ * of next node, moving terminus also causes affects node.  
+ *  
+ * General behaviour of nodes depending on type:
+ * 	MANUAL node
+ * 		each point is drawn manually, and path may be editable
+ * 		editable path drawn with each point as a marker by maps framework
+ *
+ *  TOROUTE node
+ *  	routed node which has not yet been properly routed
+ *  	calls directions service to find route
+ *  
+ *  ROUTED node
+ * 		converted from TOROUTE node once directions service returns a routed path
+ * 		not manually editable
+ * 		moving markers will cause rerouting of the path, conversion back to TOROUTE 
+ * 		
+ * 
  * 
  * 
  */
 
-var tsNodeTypes = {
-	HOME: {value: 1, name: "Home node", color : "darkblue"},
-	MANUAL: {value: 10, name: "Manual node", color : "skyblue"},
-	PATH: {value: 11, name: "Path point"},
-	TOROUTE: {value: 20, name: "Node to route", color : "mediumblue"},
-	ROUTED: {value: 21, name: "Routed node", color : "mediumblue"},
-};
-
-var tsNodeTypesRev = tsGenerateReverseDict(tsNodeTypes);
-
-
 var tsNode = {
-	owner : null,
 };
 
+/**
+ * Initialize a this node with a type and latLng.
+ * Should be called after creating a new node.
+ */
 tsNode.initialize  = function (type, latLng) {
+	tsAssert(this.type === undefined);
+	tsAssert(type);
+	tsAssert(latLng instanceof google.maps.LatLng);
+	
 	// data
 	this.type = type;
 	this.path = new google.maps.MVCArray();
 	this.path.push(latLng);
+	this.addPathListeners();
 	this.cumulLength = 0;
 	
 	// state
 	this.editing = false; // do not update while true
 	this.startEditing();
 	
-	// for overlays
+	// for map overlays
 	this.marker = null;
 	this.polyline = null;
 	this.kmMarkers = null;
 	
+	// for elevation plot
+	this.plotElements = null;
+	
 	// for linked-list
 	this.previous = null; // use setPrevious to set correctly
 	this.next = null;
-	//this.owner = null;
+	
+	//this.owner = null; // single owner for all nodes, see below
 };
 
 
+/**
+ * Prepare for deletion.
+ * Ensure all contents reset.
+ */ 
 tsNode.clear = function() {
-	// ensure all contents reset for to allow deletion
+	
 	this.editing = true;
 	this.type = null;
 	this.clearPath();
-	this.clearOverlays();
-	this.previous = this.next = this.owner = null;
+	this.clearMapOverlays();
+	this.previous = this.next = null;
 };
 
+/**
+ * Empty and invalidate path, including removal of any listeners.
+ */ 
 tsNode.clearPath = function() {
-	// remove and invalidate path, incl. removal of any listeners
 	google.maps.event.clearInstanceListeners(this.path);
 	this.path.clear();
 	this.path = null;
 };
 
-tsNode.clearOverlays = function() {
-	// remove and invalidate any previous marker, polyline
-	// or km marker overlays
-	// incl. removal of any listeners
+/**
+ * Remove (from map) and invalidate any overlays, including removal of any listeners.
+ * This includes all markers and lines.
+ */ 
+tsNode.clearMapOverlays = function() {
 	if (this.marker) {
 		google.maps.event.clearInstanceListeners(this.marker);
 		this.marker.setMap(null);
@@ -80,26 +150,37 @@ tsNode.clearOverlays = function() {
 	this.clearKmMarkers();
 };
 
+/**
+ * Remove (from map) and invalidate km marker overlays only,
+ * including removal of any listeners.
+ */ 
 tsNode.clearKmMarkers = function() {
-	// remove and invalidate any previous km marker overlays
 	if (this.kmMarkers) {
 		for (var i = 0; i < this.kmMarkers.length; i++) {
 			this.kmMarkers[i].setMap(null);
 			// no listeners for km markers
 		}
-		this.kmMarkers.length = 0; // clear array
+		this.kmMarkers.length = 0; // clear array of markers
 	}
 };
 
 /**
- * Call to prevent updating of this node (until stopEditing called).
+ * <p>Call to enter `editing' mode.
+ *  
+ * <p>Normally, path listeners will detect a change in the polyline
+ * and trigger updating of the node (e.g. length and elevation plot).
+ * 
+ * <p>In `editing' mode, path listeners do nothing. It is the responsibility
+ * of the called to ensure proper updating of the node.
+
  */
 tsNode.startEditing = function() {
 	this.editing = true;
 };
 
 /**
- * Call to allow updating of this node once again.
+ * Call to switch back to normal mode, path listeners will update node
+ * during next change in the path.
  */
 tsNode.stopEditing = function() {
 	this.editing = false;
@@ -108,15 +189,25 @@ tsNode.stopEditing = function() {
 /**
  * Update/recalculate various parameters of this node.
  * Will automatically update downstream nodes if required.
+ * 
  */
-tsNode.update = function() {
+// TODO rationalise this function - may not need to be called all the time
+
+tsNode.pathEdited = function() {
 	if (!this.editing) {
 		this.calculateLength();
 		tsMain.elevationPlot.update();
-		console.log("updating");
+		console.log("updating"); // TODO: remove this
 	}
+	
 };
 
+
+/**
+ * Calculate length for this node and all its points.
+ * Propagate downstream.
+ * 
+ */
 tsNode.calculateLength = function() {
 	// Remember: Node has path of points, and each point may have an array of interpolated points
 	
@@ -137,19 +228,10 @@ tsNode.calculateLength = function() {
 			// find length from previous, add to cumul total for path
 			curPointCumulLength += tsComputeDistBtw(lastPointLatLng, curPointLatLng);
 		}
-		curPointLatLng.cumulLength = curPointCumulLength;  
+		curPointLatLng.cumulLength = curPointCumulLength;
+		
+		tsCalculateChildrenLength(curPointLatLng);
 
-		if (curPointLatLng.children) {
-			// if have children, calc cumul length for each child
-			var lastChildLatLng = curPointLatLng;
-			var childCumulLength = curPointCumulLength;  // used for tracking length of interpolated children within a path point
-			for (var j=0; j<curPointLatLng.children.length;j++) {
-				var curChildLatLng = curPointLatLng.children[j];
-				childCumulLength+=tsComputeDistBtw(lastChildLatLng, curChildLatLng);
-				curChildLatLng.cumulLength = childCumulLength; 
-				lastChildLatLng = curChildLatLng;
-			}
-		}
 
 		var lastFloorKm = Math.floor(lastPointCumulLength/markerEvery);
 		var curFloorKm = Math.floor(curPointCumulLength/markerEvery);
@@ -183,9 +265,33 @@ tsNode.calculateLength = function() {
 };
 
 /**
- * Sets previous and also adds previous as item 0 in this polyline
+ * Helper function to calculate length of all children of a LatLng
+ * object based on cumulLength property of the point.
+ * 
+ */
+function tsCalculateChildrenLength(latLng) {
+	tsAssert (latLng.cumulLength != null);
+	
+	if (latLng.children) {
+		// if have children, calc cumul length for each child
+		var lastChildLatLng = latLng;
+		var childCumulLength = latLng.cumulLength;
+		for (var j=0; j<latLng.children.length;j++) {
+			var curChildLatLng = latLng.children[j];
+			childCumulLength+=tsComputeDistBtw(lastChildLatLng, curChildLatLng);
+			curChildLatLng.cumulLength = childCumulLength; 
+			lastChildLatLng = curChildLatLng;
+		}
+	}
+};
+
+/**
+ * Sets previous node reference and also adds terminus of previous node 
+ * to be first point of the path of this node.
  */
 tsNode.setPrevious = function(prevNode) {
+	tsAssert(tsNode.isPrototypeOf(prevNode));
+	
 	this.startEditing();
 	this.previous = prevNode;
 	this.path.insertAt(0,prevNode.getTerminus());
@@ -193,24 +299,32 @@ tsNode.setPrevious = function(prevNode) {
 };
 
 /**
- * Update terminus location, also change next's (if any) first point
+ * Update terminus location, also change first point of path of
+ * next node (if any).
  */
 tsNode.updateTerminus = function(latLng) {
+	tsAssert(latLng instanceof google.maps.LatLng);
+
 	this.startEditing();
 	this.path.setAt(this.path.getLength()-1,latLng);
-	this.updatePosition();
+	this.reroute();
 	if (this.next) {
 		this.next.startEditing();
 		this.next.path.setAt(0,latLng);
-		this.next.updatePosition(); 
+		this.next.reroute(); 
 		this.next.stopEditing();
 		// update from this (below) propagates to this.next
 	}
 	this.stopEditing();
-	this.update();
+	this.calculateLength();
 };
 
-tsNode.updatePosition = function() {
+/**
+ * If an autorouted point, reroute this node from first point to 
+ * terminus of path using directions service. Call after
+ * updating first point or terminus.
+ */
+tsNode.reroute = function() {
 	if (this.type==tsNodeTypes.TOROUTE || this.type==tsNodeTypes.ROUTED ) {
 		this.startEditing();
 		this.type = tsNodeTypes.TOROUTE;
@@ -227,17 +341,24 @@ tsNode.updatePosition = function() {
 
 };
 
-
+/**
+ * Return terminus of this node, i.e. last point in path.
+ */
 tsNode.getTerminus = function() {
 	return this.path.getAt(this.path.getLength()-1); 
 };
 
-tsNode.addPoint = function(latLng) {
-	if (this.type==tsNodeTypes.DUMMY) tsError("Invalid node");
-	var newLength = this.path.push(latLng);
-	if (this.marker) this.marker.setPosition(this.getTerminus());
-	return newLength;
-	// update handle by path listener
+/**
+ * Append a point to end of path for this node. Should only be called
+ * for manual nodes.
+ */
+tsNode.appendPoint = function(latLng) {
+	tsAssert(latLng instanceof google.maps.LatLng);
+	tsAssert(this.type === tsNodeTypes.MANUAL);
+
+	this.path.push(latLng);
+	//if (this.marker) this.marker.setPosition(this.getTerminus());
+	// update handled by path listener
 };
 
 tsNode.autoRoute = function() {
@@ -250,10 +371,11 @@ tsNode.autoRoute = function() {
 	var that = this;
 	tsMain.directionsService.route(request, function(response, status) {
 		if (status != google.maps.DirectionsStatus.OK) {
-            tsWarning("Direction service failed due to: " + status);
+            tsError("Direction service failed due to: " + status);
             // TODO: more handling here
 		} if (request.destination!==that.path.getAt(1)) {
 			tsWarning("Path changed during auto-route request");
+			// silently ignore
 		} else {
 			that.startEditing();
 			var origin = that.path.getAt(0);
@@ -280,7 +402,7 @@ tsNode.autoRoute = function() {
 			that.type = tsNodeTypes.ROUTED;
 			that.stopEditing();
 			that.updateOverlays(tsMain.map);
-			that.update();
+			that.pathEdited();
 		};
 	});
 };
@@ -368,7 +490,6 @@ tsNode.updateOverlays = function() {
 		this.polyline.setOptions(polylineOptions);
 	} else {
 		this.polyline = new google.maps.Polyline(polylineOptions);
-		this.addPolylineListeners();
 	}
 	if (this.marker) {
 		this.marker.setOptions(markerOptions);
@@ -378,38 +499,36 @@ tsNode.updateOverlays = function() {
 	}
 };
 
-tsNode.addPolylineListeners = function() {
+/**
+ * Add listeners for a change to the path. 
+ * Any edits to the path (manual or programmatic) 
+ * will trigger these listeners
+ */
+tsNode.addPathListeners = function() {
 	var that = this;
-	var pathEdited = function() {
-		that.update();
-	};
 	
-	/*
-	google.maps.event.addListener(this.polyline, "dragend", function() {
-		console.log("path dragend");
-		pathEdited();
-	});*/
+	
+	google.maps.event.addListener(this.path, "dragend", function() {
+		// this event is never called
+		tsAssert(false, "path dragend event");
+	});
     google.maps.event.addListener(this.path, "insert_at", function(index) {
-    	console.log("path insert", index);
-		pathEdited();
+    	that.pathEdited();
 	});
     google.maps.event.addListener(this.path, "remove_at", function(index, element) {
-    	console.log("path remove", index);
-    	console.log(that.path.getAt(index));
-		pathEdited();
+    	that.pathEdited();
 	});
     google.maps.event.addListener(this.path, "set_at", function(index, element) {
-    	console.log("path set", index);
-    	console.log(that.path.getAt(index));
     	if (index>0) {
     		var prevLatLng = that.path.getAt(index-1); 
     		prevLatLng.height = null;
     		if (prevLatLng.children) prevLatLng.children.length = 0;
     	}
-		pathEdited();
+    	that.pathEdited();
 	});
 		
 };
+
 
 tsNode.addMarkerListeners = function() {
 	var that = this;
@@ -447,8 +566,13 @@ tsPointList.clear = function() {
 	while (this.head) tsPointList.deleteLastNode();	
 };
 
+tsPointList.resetHeightExtents = function() {
+	this.minHeight = +Infinity;
+	this.maxHeight = -Infinity;
+};
+
 tsPointList.getExtent = function() {
-	this.head.calculateLength(); // recalc. all lengths, REMOVE to more efficient
+	//this.head.calculateLength(); // recalc. all lengths, REMOVE to more efficient
 	var curNode = this.head;
 	var minHeight = +Infinity;
 	var maxHeight = -Infinity;
@@ -535,7 +659,7 @@ tsPointList.addPoint = function(latLng, addType) {
 			
 			// yes, add a new point to that node
 			type = tsNodeTypes.PATH;
-			this.tail.addPoint(latLng);
+			this.tail.appendPoint(latLng);
 		} else {
 			// no, make a new node
 			type = tsNodeTypes.MANUAL;
@@ -549,7 +673,7 @@ tsPointList.addPoint = function(latLng, addType) {
 	if (node) {
 		node.stopEditing();
 		node.updateOverlays(tsMain.map);
-		node.update();
+		node.pathEdited();
 	}
 	return type; // return type, may be 'home'
 };
@@ -567,7 +691,7 @@ tsPointList.addRoutedPoint = function(latLng) {
 };
 
 tsPointList.update = function() {
-	if (this.head) this.head.update(); // quick fix // TODO: proper update
+	if (this.head) this.head.pathEdited(); // quick fix // TODO: proper update
 }
 
 tsPointList.lookupHeight = function() {
@@ -614,16 +738,16 @@ tsPointList.lookupHeight = function() {
 						//console.log(resultLatLng.lat(),resultLatLng.lng());
 						tsError("Query/response latlng do not match");
 					}
-					console.assert (queryLatLng.height == null || queryLatLng.height == resultLatLng.height);
+					tsAssert (queryLatLng.height == null || queryLatLng.height == resultLatLng.height);
 					queryLatLng.height = resultLatLng.height;
-					console.assert(!queryLatLng.children || queryLatLng.children.length==0);
+					tsAssert(!queryLatLng.children || queryLatLng.children.length==0);
 					console.log("start");
 				}
 				else if (resultLatLng.index<0) {
 					// last point in returned DEM lookup = end point
 					query_i++; 
 					queryLatLng = latLngs[query_i];
-					console.assert (queryLatLng.height == null || queryLatLng.height == resultLatLng.height); 
+					tsAssert (queryLatLng.height == null || queryLatLng.height == resultLatLng.height); 
 					queryLatLng.height = resultLatLng.height; 
 					query_i++; 
 					console.log("End");
@@ -766,5 +890,290 @@ tsPointList.fromCSV = function(csv) {
     }
 };
 
+/**
+ * Multi-purpose iterator for iterating through node/point/child lists.
+ * 
+ * Non-standard but based on ECMAScript 6 iterator protocol.
+ * 
+ * Provides methods for directly accessing underlying list structure
+ * (i.e. nodes, points in nodes, children in points).
+ * 
+ * Also provides methods for simply iterating over points without
+ * being concerned with list structure (next2d, next3d).
+ * 
+ * Does not support any kind of manipulation of underlying lists while
+ * iteration in progress.
+ * 
+ * ECMAScript 6 iterator protocol: 
+ * next() returns { done: false, value: element } or
+ *  			   { done: true [, value: retVal] }
+ */
+var tsListIterator = {
+	theList : tsPointList, // list being iterated over, currently fixed
+	
+	// attributes for tracking iteration of nodes (in top-level list)
+	curNode : null,
+	nextNode : null,
+	
+	// attributes for tracking iteration of points in current node
+	curPoint : null,
+	nextPointIndex : 0,
+	curPointIsTerminal : false, // true if curPoint is a terminal point in path
+	
+	// attributes for tracking iteration of children in current point
+	curChild : null,
+	nextChildIndex : 0,
+	
+	// attributes that store previous/current 
+	prevIterPoint : null,
+	curIterPoint : null,
+	curIterIsChild : false, // true if current iter point is child 
+	
+};
+
+/**
+ * Reset iterator for iteration from beginning.
+ */
+tsListIterator.reset = function() {
+	this.curNode = null;
+	this.prevIterPoint = null;
+	this.curIterPoint = null;
+	this.curIterIsChild = false; 
+	this.resetPointIterator();
+	this.resetChildIterator();
+	this.nextNode = this.theList.head;
+};
+
+/**
+ * Iterator for nodes in list.
+ * 
+ * Return next node in list as {done : false, value : node}
+ * or {done : true} if no more nodes.
+ */
+tsListIterator.listNextNode = function() {
+	this.curNode = null; // invalidate curNode
+	this.resetPointIterator(); // invalidate sub-iterator as soon as function called
+	if (this.nextNode == null) return { done: true };
+	
+	this.curNode = this.nextNode;
+	//console.log("node" + (this.curNode == this.theList.head ? " head" : ""));
+	this.nextNode = this.nextNode.next;
+	return { value : this.curNode, done : false};
+};
+
+
+/**
+ * Reset sub-iterator for points within a node.
+ */
+tsListIterator.resetPointIterator = function() {
+	this.curPoint = null;
+	this.nextPointIndex = 0;
+	this.curPointIsTerminal = false;
+};
+
+
+/**
+ * Sub-iterator for points in node.
+ * 
+ * Return next point in current node as {done: false, value : point}
+ * or {done : true} if no more points.
+ */
+tsListIterator.nodeNextPoint = function() {
+	this.curPoint = null; // invalidate first
+	this.resetChildIterator(); // invalidate sub-iterator as soon as function called
+	if (this.nextPointIndex >= this.curNode.path.getLength()) return { done : true };
+	
+	this.curPoint = this.curNode.path.getAt(this.nextPointIndex);
+	//console.log("point" + this.nextPointIndex);
+	this.nextPointIndex += 1;
+	if (this.nextPointIndex == this.curNode.path.getLength()) this.curPointIsTerminal = true;
+	else this.curPointIsTerminal = false;
+	return { value : this.curPoint, done : false };
+	
+};
+
+/**
+ * Reset sub-iterator for children within a point.
+ */
+tsListIterator.resetChildIterator = function() {
+	this.curChild = null;
+	this.nextChildIndex = 0;
+};
+
+/**
+ * Sub-(sub-)iterator for children within point,
+ * 
+ * Return next child of current point as {done: false, value : chi;d}
+ * or {done : true} if no more children.
+ */
+
+tsListIterator.pointNextChild = function() {
+	this.curChild = null; // invalidate first
+	if (this.nextPointIndex >= this.curNode.path.getLength()  || // terminal point:
+																 //  do not iterate through terminal points children as 
+																 //  point is shared with first point of next node,
+																 //  and children 'belong' to that first point
+		!this.curPoint.children || // no children
+		this.nextChildIndex >= this.curPoint.children.length) // end of children list
+		return { done : true };
+		
+	this.curChild = this.curPoint.children[this.nextChildIndex];
+	//console.log("child" + this.nextChildIndex);
+	this.nextChildIndex += 1;
+	return { value : this.curChild, done : false };
+};
+
+/**
+ * Iterator for 2d points, i.e. points across all nodes.
+ * 
+ * By default, will only return non-identical consecutive points,
+ * i.e. will only return terminal point of one node and not shared 
+ * first point of next node.
+ * 
+ * Default (bracket = not returned):
+ * Will return (node_x) point_n-1, point_n, (node_x+1 point0) point1, point2...
+ * 
+ * @param all
+ * If true, will iterate over all points and include all identical 
+ * shared points.
+ * Will return (node_x) point_n-1, point_n, (node_x+1) point0, point1, point2...
+ * 
+ * @returns
+ * Return next child of current point as {done: false, value : chi;d}
+ * or {done : true} if no more children.
+ */
+tsListIterator.next2d = function(all) {
+	this.prevIterPoint = this.curIterPoint;
+	while (true) {
+		if (this.curNode) { // have a current node
+			while (true) {
+				var next = this.nodeNextPoint(); // iterate to next point in node
+				if (next.done) break; // no more points in this node
+				if (all || next.value != this.prevIterPoint) {
+					this.curIterPoint = next.value;
+					return next; // got a non-identical point (to last), return it
+				}
+			}
+		}
+		// try next node
+		var next = this.listNextNode();
+		if (next.done) {
+			this.curIterPoint = null;
+			return next; // no more nodes, return done signal
+		}
+		tsAssert(this.curNode, "curNode still invalid"); // unless done, curNode should be set by call to listNextNode()
+	}
+};
+
+/**
+ * Iterator for 3d points, points in path and their children across all
+ * nodes.
+ * 
+ * Will return point, child0... childn, point+1, child0...
+ * 
+ * By default, will only return non-identical consecutive points,
+ * i.e. will only return terminal point of one node and not shared 
+ * first point of next node; children are not returned for terminal
+ * point but will be returned after iterating over it, although these
+ * will 'belong' to the first point (not return during the iteration).
+ * 
+ * Default (bracket = not returned):
+ * Will return (node_x) point_n-1, child0... childn, point_n, 
+ * (node_x+1 point0), child0... childn, point1,child0... childn, point2...
+ * 
+ * @param all
+ * If true, will iterate over all points and include all identical 
+ * shared points:
+ * Will return (node_x) point_n-1, child0... childn, point_n, 
+ * (node_x+1) point0, child0... childn, point1,child0... childn, point2...
+ * 
+ * Return next child of current point as {done: false, value : chi;d}
+ * or {done : true} if no more children.
+ * @returns
+ */
+tsListIterator.next3d = function(all) {
+	this.prevIterPoint = this.curIterPoint;
+	var next;
+	while (true) {
+		if (this.curPoint) { // have a current point
+			next = this.pointNextChild(); // iterate to next child in point
+			if (!next.done) {
+				this.curIterIsChild = true;
+				break; // got a valid child: break & return it
+			}
+		}
+		
+		// try next point
+		next = this.next2d(true);
+		if (next.done) {
+			this.curIterPoint = null;
+			this.curIterIsChild = false;
+			return next; // no more points, return done signal
+		}
+		if (all || next.value != this.prevIterPoint) {
+			this.curIterIsChild = false;
+			break; // got a non-identical point (to last), break & return it		
+		}
+	}
+	this.curIterPoint = next.value;
+	return next; // got a valid child: return it
+};
+
+// test for iterator
+/*
+function testIterator() {
+	tsListIterator.reset();
+	var nextNode, nextPoint, nextChild;
+	var i;
+	console.log("TEST: Full iterate");
+	i = 0;
+	while (nextNode = tsListIterator.listNextNode(), !nextNode.done) {
+		console.log("node "+i);
+		i++;
+		while (nextPoint = tsListIterator.nodeNextPoint(), !nextPoint.done) {
+			console.log(nextPoint.value);
+			while (nextChild = tsListIterator.pointNextChild(), !nextChild.done) { 
+				console.log(nextChild.value);
+			}
+		}
+	}
+	var next;
+	tsListIterator.reset();
+	console.log("TEST: 2d iterate");
+	i = 0;
+	while (next = tsListIterator.next2d(), !next.done) {
+		console.log(next.value);
+		console.log("iteration "+i+" node point "+(tsListIterator.nextPointIndex-1));
+		i++;
+	}
+	
+	tsListIterator.reset();
+	console.log("TEST: 2d iterate all");
+	i = 0;
+	while (next = tsListIterator.next2d(true), !next.done) {
+		console.log(next.value);
+		console.log("iteration "+i+" node point "+(tsListIterator.nextPointIndex-1));
+		i++;
+	}
+
+	tsListIterator.reset();
+	console.log("TEST: 3d iterate");
+	i = 0;
+	while (next = tsListIterator.next3d(), !next.done) {
+		console.log(next.value);
+		console.log("iteration "+i+" node point "+(tsListIterator.nextPointIndex-1)+" child "+(tsListIterator.nextChildIndex-1));
+		i++;
+	}
+
+	tsListIterator.reset();
+	console.log("TEST: 3d iterate all");
+	i = 0;
+	while (next = tsListIterator.next3d(true), !next.done) {
+		console.log(next.value);
+		console.log("iteration "+i+" node point "+(tsListIterator.nextPointIndex-1)+" child "+(tsListIterator.nextChildIndex-1));
+		i++;
+	}
+}
+*/
 function tsInitializeList() {
 }
