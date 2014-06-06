@@ -103,7 +103,6 @@ var tsElevationPlot = {
 	y : [],
 	axis_x : {},
 	axis_y : {},
-	points : {},
 	svg : null,
 	graph : null,
 	
@@ -186,6 +185,17 @@ tsElevationPlot.updateXAxis = function() {
 tsElevationPlot.updateYAxis = function() {
 	
 };
+var axis_stroke = 1;
+var majortick_stroke = 1;
+var minortick_stroke = 0.75;
+var majortick_size = 5; // in svg units
+var minortick_size = 3;
+var ticklabelx_adj = [-1,10];
+var ticklabely_adj = [-2,-2];
+var font_family = 'Helvetica';
+var font_size = 12;
+var symbol_size = 10;
+var line_stroke = 1;
 
 tsElevationPlot.update = function() {
 	if (this.svg == undefined) {
@@ -229,17 +239,6 @@ tsElevationPlot.update = function() {
 	var max_q = this.y2q(this.axis_y.scale.max);
 	
 	// draw x-axis
-	var axis_stroke = 1;
-	var majortick_stroke = 1;
-	var minortick_stroke = 0.75;
-	var majortick_size = 5; // in svg units
-	var minortick_size = 3;
-	var ticklabelx_adj = [-1,10];
-	var ticklabely_adj = [-2,-2];
-	var font_family = 'Helvetica';
-	var font_size = 12;
-	var symbol_size = 10;
-	var line_stroke = 1;
 	
 	if (this.axis_x.svg_group) this.axis_x.svg_group.clear();
 	else this.axis_x.svg_group = this.graph.group();
@@ -300,221 +299,85 @@ tsElevationPlot.update = function() {
 			}
 	}
 	
-	// draw line
-	if (this.svg_lines) this.svg_lines.clear();
-	else this.svg_lines = this.graph.group();
+	// draw lines and points
 	
-	group = this.svg_lines = this.graph.group();
+	// svg elements that 'belong' to data are assigned to
+	// plot_elements groups that are attributes of nodes
+	// and these groups are then assigned to the plot_elements
+	// group of the elevation plot object
 	
-	var curNode = tsPointList.head;
-	while (curNode!=null) {
-		//color = curNode.type.color;
-		color = "red"
-		var lastLatLng = null;
-		var latLng;
-		
-		for (var i = 0; i < curNode.path.getLength(); i++) {
-			latLng = curNode.path.getAt(i);
-			var numChildren = 0;
-			if (i<curNode.path.getLength()-1 && latLng.children) // non-terminal and have children
-				numChildren = latLng.children.length;
-					// note: terminal points shared with first point of next node
-					// do not draw lines for terminal points chilldren
-			for (var j=-1; j<numChildren;j++) {
-				var curLatLng;
-				if (j<0) curLatLng = latLng;
-				else curLatLng = latLng.children[j];
-				
-				if (curLatLng.height == null) {
-					lastLatLng = null;
-					continue;
-				}
-				if (lastLatLng) {
-					// if get here both last and cur latLng height is defined 
-					group.line(this.x2p(lastLatLng.cumulLength), this.y2q(lastLatLng.height),
-							   this.x2p(curLatLng.cumulLength), this.y2q(curLatLng.height))
-						 .stroke({width: line_stroke,
-							 	  color: color});
-				}
-				lastLatLng = curLatLng;
-			}
-			
-		}
-		curNode = curNode.next;
-	}
+	if (this.plot_elements==null) this.plot_elements = this.graph.group();
+	
 	var next;
-	for (tsListIterator.reset();  next = tsListIterator.next3d(), !next.done;) {
-		color = tsListIterator.curNode.type.color;
-		var lastLatLng = tsListIterator.prevIterPoint;
-		var curLatLng = tsListIterator.curIterPoint;
+	for (tsListIterator.reset();  next = tsListIterator.listNextNode(), !next.done;) {
+		this.plotNode(next.value);
 
-		if (lastLatLng && lastLatLng.height && curLatLng.height) {
-			group.line(this.x2p(lastLatLng.cumulLength), this.y2q(lastLatLng.height),
-					   this.x2p(curLatLng.cumulLength), this.y2q(curLatLng.height))
-				 .stroke({width: line_stroke,
-					 	  color: color});
-		}
 	}
-	/*
-	lastp = null;
-	for (i=0;i<this.x_values.length;i++) {
-		x = this.x_values[i];
-		y = this.y_values[i];
-		p = this.x2p(x);
-		q = this.y2q(y);
-		if (lastp!==null) {
-			group.line(lastp,lastq,p,q).stroke({ width: 1 });
-		}
-		lastp = p;
-		lastq = q;
-	}*/
-
-	// draw points
-	if (this.svg_points) this.svg_points.clear();
-	else this.svg_points = this.graph.group();
-	
-	group = this.svg_points = this.graph.group();
-
-	
-	/*
-	while (curNode!=null) {
-		for (var i = 0; i < curNode.path.getLength(); i++) {
-			var latLng = curNode.path.getAt(i);
-			if (latLng.children) for (var j = 0; j < latLng.children.length; j++) {
-			}
-		}
-		curNode = curNode.next;
-	}
-	*/
-	
-	var text = group.text(function(obj) {
-		  obj.tspan("");
-		});
-	text.build(true);
-	text.font({
-		  family:   font_family,
-		  size:     font_size,
-		  anchor:   'middle'
-		});
-		
-	
-
-	var curNode = tsPointList.head;
-	var color;
-	var latLng;
-	while (curNode!=null) {
-		//color = curNode.type.color;
-		color = "red";
-		/*{
-			q = this.y2q(this.axis_y.scale.min);
-			text.tspan("?")
-				.x(p)
-				.y(q);
-			
-		}*/
-		switch (curNode.type) {
-			case tsNodeTypes.HOME:
-				// do not draw home node
-				break;
-			case tsNodeTypes.MANUAL:
-				for (var i = 0; i < curNode.path.getLength()-1; i++) {
-					// for all intermediate points
-					latLng = curNode.path.getAt(i);
-					y = latLng.height;
-					if (y != null) {
-						x = latLng.cumulLength;
-						p = this.x2p(x);
-						q = this.y2q(y);
-						group.circle(symbol_size)
-							 .cx(p)
-							 .cy(q)
-							 .fill({color: 'white'})
-							 .stroke({color: color});
-					}
-					
-				}
-				// no break: continue to next block for drawing terminus
-			case tsNodeTypes.TOROUTE:
-			case tsNodeTypes.ROUTED:
-				latLng = curNode.getTerminus();
-				y = latLng.height;
-				if (y != null) {
-					x = latLng.cumulLength;
-					p = this.x2p(x);
-					q = this.y2q(y);
-					//group.circle(symbol_size)
-					group.rect(symbol_size,symbol_size)
-						 .cx(p)
-						 .cy(q)
-						 .fill({color: color});
-				}
-				break;
-		}
-		curNode = curNode.next;
-	}
-
-	
-	
-	var latLng;
-	for (tsListIterator.reset();  next = tsListIterator.next2d(), !next.done;) {
-		var curNode = tsListIterator.curNode;
-		var color = curNode.type.color;
-		var latLng = next.value;
-		/*{
-			q = this.y2q(this.axis_y.scale.min);
-			text.tspan("?")
-				.x(p)
-				.y(q);
-			
-		}*/
-		switch (curNode.type) {
-			case tsNodeTypes.HOME:
-				// do not draw home node
-				break;
-			case tsNodeTypes.MANUAL:
-				if (!tsListIterator.curPointIsTerminal) {
-					// for all intermediate points
-					y = latLng.height;
-					if (y != null) {
-						x = latLng.cumulLength;
-						p = this.x2p(x);
-						q = this.y2q(y);
-						group.circle(symbol_size)
-							 .cx(p)
-							 .cy(q)
-							 .fill({color: 'white'})
-							 .stroke({color: color});
-					}
-					
-				}
-				// no break: continue to next block for drawing terminus
-			case tsNodeTypes.TOROUTE:
-			case tsNodeTypes.ROUTED:
-				if (tsListIterator.curPointIsTerminal) {
-	
-					//latLng = curNode.getTerminus();
-					y = latLng.height;
-					if (y != null) {
-						x = latLng.cumulLength;
-						p = this.x2p(x);
-						q = this.y2q(y);
-						//group.circle(symbol_size)
-						group.rect(symbol_size,symbol_size)
-							 .cx(p)
-							 .cy(q)
-							 .fill({color: color});
-					}
-					break;
-				}
-		}
-		curNode = curNode.next;
-	}
-	
-	
-	text.build(false);
-
-
 
 	this.fit();
 };
+
+
+
+tsElevationPlot.plotNode = function(curNode) {
+	var color = curNode.type.color;
+	var nodegroup = curNode.plot_group;
+	if (nodegroup==null) {
+		nodegroup = this.plot_elements.group();
+		curNode.plot_group = nodegroup;
+	} else {
+		nodegroup.clear();
+	}
+	var next,p,q;
+	for (tsNodeIterator.reset(curNode);  next = tsNodeIterator.next3d(), !next.done;) {
+		var curLatLng = tsNodeIterator.curIterPoint;
+		if (!curLatLng.height) continue;
+		if (!tsNodeIterator.curIterIsChild) {
+			// plot points for 2d points (i.e. non-children)
+			
+			if (!tsNodeIterator.curPointIsTerminal) {
+				// for all intermediate points,
+				// plot circles similar to maps display
+				// TODO: trigger these on/off depending on editable status?
+				if (curNode.type===tsNodeTypes.MANUAL) {
+					p = this.x2p(curLatLng.cumulLength);
+					q = this.y2q(curLatLng.height);
+					nodegroup.circle(symbol_size)
+							 .cx(p)
+							 .cy(q)
+							 .fill({color: 'white'})
+							 .stroke({color: color});
+				}
+			} 
+			else {
+				// terminal point: draw marker
+				switch (curNode.type) {
+					case tsNodeTypes.HOME:
+						// do not draw home node
+						break;
+					case tsNodeTypes.MANUAL:
+					case tsNodeTypes.TOROUTE:
+					case tsNodeTypes.ROUTED:
+						p = this.x2p(curLatLng.cumulLength);
+						q = this.y2q(curLatLng.height);
+						nodegroup.rect(symbol_size,symbol_size)
+								 .cx(p)
+								 .cy(q)
+								 .fill({color: color});
+						break;
+				}
+			}
+		}
+			
+		// draw line if lastLatLng is valid
+		var lastLatLng = tsNodeIterator.prevIterPoint;
+		if (lastLatLng && lastLatLng.height) {
+			nodegroup.line(this.x2p(lastLatLng.cumulLength), this.y2q(lastLatLng.height),
+						   this.x2p(curLatLng.cumulLength), this.y2q(curLatLng.height))
+					  .stroke({width: line_stroke,
+					           color: color});
+		}
+	}
+}
+
 
