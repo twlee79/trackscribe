@@ -14,7 +14,7 @@
  * with the terminal path point of the previous node.
  * 
  * Each LatLng coordinate may contain a series of child points, which are a series
- * of points generated when doing elevation lookup - these points should in collinear
+ * of points generated when doing elevation lookup - these points should be collinear
  * from point to next point in x,y plane (on a mercator projection) but contain
  * different heights.
  * 
@@ -84,17 +84,15 @@ tsNode.initialize  = function (type, latLng) {
 	tsAssert(type);
 	tsAssert(latLng instanceof google.maps.LatLng);
 	
+	// state
+	this.deactivateListeners();
+	
 	// data
 	this.type = type;
 	this.path = new google.maps.MVCArray();
 	this.path.push(latLng);
 	this.addPathListeners();
-	this.cumulLength = null; // number of null, which indicates invalid
-	
-	// state
-	this.editing = false; // do not update while true
-	this.startEditing();
-	this.heightValid = false; // true if heights of this point and to next is valid
+	this.cumulLength = null; // number or null, which indicates invalid/need recalculation
 	
 	// for map overlays
 	this.marker = null;
@@ -111,13 +109,31 @@ tsNode.initialize  = function (type, latLng) {
 	//this.owner = null; // single owner for all nodes, see below
 };
 
+/**
+ * Deactivate path listeners, use when programmatically 
+ * manipulating path but want these changes ignored
+ * by listeners.
+ * 
+ */
+tsNode.deactivateListeners = function() {
+	this.listenersActive = false;	
+};
+
+/**
+ * Reactivate path listeners, use when finished
+ * manipulating path.
+ * 
+ */
+tsNode.activateListeners = function()  {
+	this.listenersActive = true;	
+};
+
 
 /**
  * Prepare for deletion.
  * Ensure all contents reset.
  */ 
 tsNode.clear = function() {
-	this.editing = true;
 	this.type = null;
 	this.clearPath();
 	this.clearMapOverlays();
@@ -132,6 +148,101 @@ tsNode.clearPath = function() {
 	this.path.clear();
 	this.path = null;
 };
+
+/**
+ * Add listeners for a change to the path. 
+ * Any edits to the path (manual or programmatic) 
+ * will trigger these listeners
+ */
+tsNode.addPathListeners = function() {
+	var that = this;
+	
+	function pathListenerCallback(index) {
+		if (!that.listenersActive) return;
+		that.pathEdited(index);
+		that.owner.update();
+	}
+	
+	google.maps.event.addListener(this.path, "dragend", function() {
+		// this event is never called
+		tsAssert(false, "path dragend event");
+	});
+    google.maps.event.addListener(this.path, "insert_at", pathListenerCallback);
+    google.maps.event.addListener(this.path, "remove_at", pathListenerCallback);
+    google.maps.event.addListener(this.path, "set_at", pathListenerCallback);
+		
+};
+
+
+/**
+ * Signal to node that its path has been edited
+ * 
+ * @param index
+ * index of point in path that was edited or null
+ * 
+ * Will invalid any parameters of point in path that are
+ * affected by this change.
+ * Call to update (handled by owning list) will recalculate
+ * these parameters.
+ * 
+ */
+tsNode.pathEdited = function(index) {
+	this.cumulLength = null; // invalid, forces all points in node to recalc length
+		// propagated downstream by list update
+	
+	// TODO: check a new element is set at index
+	
+	if (index>0) {
+		// point @ index is altered/new
+		// child points for previous point (index -1) are no longer valid
+		var prevLatLng = this.path.getAt(index-1);
+		if (prevLatLng.children!=null) {
+			prevLatLng.children.length = 0;
+			prevLatLng.heightValid = false; // true if heights of this point and to next is valid
+		}
+	}
+	
+	// 	var element = this.path.getAt(index);
+	//	element.height = null;
+	//	if (element.children!=null) element.children.length = 0;
+};
+
+/**
+ * Sets previous node reference and also adds terminus of previous node 
+ * to be first point of the path of this node.
+ */
+tsNode.setPrevious = function(prevNode) {
+	tsAssert(tsNode.isPrototypeOf(prevNode));
+	
+	this.owner.pauseUpdate();
+	this.previous = prevNode;
+	this.path.insertAt(0,prevNode.getTerminus());
+	this.pathEdited();
+	//this.owner.resumeUpdate();
+	//this.owner.update(); //update handled by caller
+};
+
+/**
+ * Update terminus location, also change first point of path of
+ * next node (if any).
+ */
+tsNode.updateTerminus = function(latLng) {
+	tsAssert(latLng instanceof google.maps.LatLng);
+
+	this.owner.pauseUpdate();
+	this.path.setAt(this.path.getLength()-1,latLng);
+	//this.pathEdited(this.path.getLength()-1);
+	this.reroute();
+	if (this.next) {
+		//this.next.deactivateListeners();
+		this.next.path.setAt(0,latLng);
+		this.next.pathEdited(0);
+		this.next.reroute();
+		
+	}
+	this.owner.resumeUpdate();
+};
+
 
 /**
  * Remove (from map) and invalidate any overlays, including removal of any listeners.
@@ -165,176 +276,18 @@ tsNode.clearKmMarkers = function() {
 	}
 };
 
-/**
- * <p>Call to enter `editing' mode.
- *  
- * <p>Normally, path listeners will detect a change in the polyline
- * and trigger updating of the node (e.g. length and elevation plot).
- * 
- * <p>In `editing' mode, path listeners do nothing. It is the responsibility
- * of the called to ensure proper updating of the node.
-
- */
-tsNode.startEditing = function() {
-	this.editing = true;
-};
-
-/**
- * Call to switch back to normal mode, path listeners will update node
- * during next change in the path.
- */
-tsNode.stopEditing = function() {
-	this.editing = false;
-};
-
-/**
- * Update/recalculate various parameters of this node.
- * Will automatically update downstream nodes if required.
- * 
- */
-// TODO rationalise this function - may not need to be called all the time
-// TODO if moved a point have to clear its children
-tsNode.pathEdited = function(index) {
-	this.cumulLength = null;
-	
-	if (!this.editing) {
-		this.calculateLength();
-		tsMain.elevationPlot.update();
-		console.log("updating"); // TODO: remove this
-	}
-	
-};
-
-
-/**
- * Update/recalculate various parameters of this node.
- * 
- * @param updateLength
- * If true, will update lengths of this node and its points.
- * 
- * @param updateHeightExtents
- * If true, will update owner's height extents based on height
- * of node points and their children. 
- */
-tsNode.update = function(updateLength, updateHeightExtents) {
-
-	if (!updateLength && !updateHeightExtents) return; // nothing to do
-	
-	var markerEvery = 1000.0; // metres
-	
-	var lastPointCumulLength = 0; // need to track cur and last point cumul length for km markers
-	
-	if (updateLength) { 
-		this.clearKmMarkers(); // these will need to be recalculated
-		if (this.previous) lastPointCumulLength = this.previous.cumulLength; // use previous node cumul length as base
-	}
-	
-	var lastPointLatLng = null;
-	var curPointCumulLength = lastPointCumulLength;
-
-	for (var i = 0; i < this.path.getLength(); i++) {
-		var curPointLatLng = this.path.getAt(i);
-		
-		if (updateLength) {
-			if (lastPointLatLng) {
-				// find length from previous, add to cumul total for path
-				curPointCumulLength += tsComputeDistBtw(lastPointLatLng, curPointLatLng);
-			}
-			curPointLatLng.cumulLength = curPointCumulLength;
-			
-			var lastFloorKm = Math.floor(lastPointCumulLength/markerEvery);
-			var curFloorKm = Math.floor(curPointCumulLength/markerEvery);
-			
-			// do we need to add a km marker?
-			while (lastFloorKm<curFloorKm) {
-				// look for all transitions in floor after dividing by markerEvery length e.g. 2>4 km, need markers for 3,4 
-				lastFloorKm = lastFloorKm+1;
-				
-				var kmMarkerLatLng = tsComputeOffset(lastPointLatLng, curPointLatLng, lastFloorKm*markerEvery-lastPointCumulLength);
-				var kmMarkerImage = "markers/marker_"+lastFloorKm+".png";
-				var kmMarkerOptions = {
-					position : kmMarkerLatLng,
-					map : tsMain.map,
-					icon: kmMarkerImage,
-				};
-				if (!this.kmMarkers) this.kmMarkers = [];
-				this.kmMarkers.push(new google.maps.Marker(kmMarkerOptions));
-				
-			}
-		}
-
-		if (updateHeightExtents && curPointLatLng.height != null) {
-			this.owner.updateHeightExtents(curPointLatLng.height);
-		}
-
-		// update any children of curPoint
-		if (curPointLatLng.children) {
-			var lastChildLatLng = curPointLatLng;
-			var childCumulLength = curPointCumulLength;
-			for (var j=0; j<curPointLatLng.children.length;j++) {
-				var curChildLatLng = curPointLatLng.children[j];
-				if (updateLength) {
-					childCumulLength+=tsComputeDistBtw(lastChildLatLng, curChildLatLng);
-					curChildLatLng.cumulLength = childCumulLength; 
-					lastChildLatLng = curChildLatLng;
-				}
-				if (updateHeightExtents && curChildLatLng.height != null) {
-					this.owner.updateHeightExtents(curChildLatLng.height);
-				}
-			}
-		}
-		
-		// update for next iteration
-		lastPointLatLng = curPointLatLng;
-		lastPointCumulLength = curPointCumulLength;
-	}
-	
-	this.cumulLength = curPointCumulLength; // node stores cumul length of last point
-
-};
-
-/**
- * Sets previous node reference and also adds terminus of previous node 
- * to be first point of the path of this node.
- */
-tsNode.setPrevious = function(prevNode) {
-	tsAssert(tsNode.isPrototypeOf(prevNode));
-	
-	this.startEditing();
-	this.previous = prevNode;
-	this.path.insertAt(0,prevNode.getTerminus());
-	this.stopEditing();
-};
-
-/**
- * Update terminus location, also change first point of path of
- * next node (if any).
- */
-tsNode.updateTerminus = function(latLng) {
-	tsAssert(latLng instanceof google.maps.LatLng);
-
-	this.startEditing();
-	this.path.setAt(this.path.getLength()-1,latLng);
-	this.reroute();
-	if (this.next) {
-		this.next.startEditing();
-		this.next.path.setAt(0,latLng);
-		this.next.reroute(); 
-		this.next.stopEditing();
-		// update from this (below) propagates to this.next
-	}
-	this.stopEditing();
-	this.calculateLength();
-};
 
 /**
  * If an autorouted point, reroute this node from first point to 
  * terminus of path using directions service. Call after
  * updating first point or terminus.
+ * 
+ * Always reactivates listeners and signals change to owner.
+ * 
  */
 tsNode.reroute = function() {
 	if (this.type==tsNodeTypes.TOROUTE || this.type==tsNodeTypes.ROUTED ) {
-		this.startEditing();
+		this.deactivateListeners();
 		this.type = tsNodeTypes.TOROUTE;
 		var origin = this.path.getAt(0);
 		var terminus = this.path.pop();
@@ -343,10 +296,8 @@ tsNode.reroute = function() {
 		this.path.push(terminus);
 		this.updateOverlays(); 
 		this.autoRoute();
-		this.stopEditing();
-		
+		this.activateListeners();
 	}
-
 };
 
 /**
@@ -385,7 +336,7 @@ tsNode.autoRoute = function() {
 			tsWarning("Path changed during auto-route request");
 			// silently ignore
 		} else {
-			that.startEditing();
+			that.deactivateListeners();
 			var origin = that.path.getAt(0);
 			that.path.clear();
 			var theRoute = response.routes[0];
@@ -408,9 +359,10 @@ tsNode.autoRoute = function() {
 			tsInfoCtrl.setHTML (theRoute.warnings+"<BR>"+theRoute.copyrights);
 			
 			that.type = tsNodeTypes.ROUTED;
-			that.stopEditing();
+			that.activateListeners();
 			that.updateOverlays(tsMain.map);
 			that.pathEdited();
+			that.owner.resumeUpdate();
 		};
 	});
 };
@@ -507,38 +459,6 @@ tsNode.updateOverlays = function() {
 	}
 };
 
-/**
- * Add listeners for a change to the path. 
- * Any edits to the path (manual or programmatic) 
- * will trigger these listeners
- */
-tsNode.addPathListeners = function() {
-	var that = this;
-	
-	
-	google.maps.event.addListener(this.path, "dragend", function() {
-		// this event is never called
-		tsAssert(false, "path dragend event");
-	});
-    google.maps.event.addListener(this.path, "insert_at", function(index) {
-    	that.pathEdited();
-	});
-    google.maps.event.addListener(this.path, "remove_at", function(index, element) {
-    	that.pathEdited();
-	});
-    google.maps.event.addListener(this.path, "set_at", function(index, element) {
-    	element.height = null;
-    	if (element.children!=null) element.children.length = 0;
-    	if (index>0) {
-    		var prevLatLng = that.path.getAt(index-1);
-    		if (prevLatLng.children!=null) prevLatLng.children.length = 0;
-    	}
-    	that.pathEdited();
-	});
-		
-};
-
-
 tsNode.addMarkerListeners = function() {
 	var that = this;
 	google.maps.event.addListener(this.marker, 'dragend', function(mouseEvent) {
@@ -553,6 +473,7 @@ var tsPointList = {
 	head : null,
 	tail : null,
 	totalLength : 0,
+	updateActive : true,
 };
 tsNode.owner = tsPointList; // only one list for so all nodes belong to it
 
@@ -569,6 +490,8 @@ tsPointList.push = function(node) {
 	}
 	this.tail = node;
 	if (this.head === null) this.head = node;
+	//this.update();
+	this.resumeUpdate();
 };
 
 tsPointList.clear = function() {
@@ -648,21 +571,23 @@ tsPointList.deleteLastNode = function() {
 		oldTail.clear();
 		if (previousNode!=null) {
 			previousNode.next = null;
-			previousNode.calculateLength();
+			previousNode.pathEdited();
 		} 
 		this.tail = previousNode;
 		if (this.tail==null) {
 			this.head = null;
 		}
 	}
+	this.resumeUpdate();
 };
 
-tsPointList.calculateLength = function() {
-	this.totalLength = 0;
-	if (this.tail) this.totalLength = this.tail.cumulLength;
-	tsDistanceCtrl.update(this.totalLength/1000.0);
-	
-};
+//
+//tsPointList.calculateLength = function() {
+//	this.totalLength = 0;
+//	if (this.tail) this.totalLength = this.tail.cumulLength;
+//	tsDistanceCtrl.update(this.totalLength/1000.0);
+//	
+//};
 
 
 tsPointList.addPoint = function(latLng, addType) {
@@ -703,9 +628,10 @@ tsPointList.addPoint = function(latLng, addType) {
 	}
 	
 	if (node) {
-		node.stopEditing();
+		node.activateListeners();
 		node.updateOverlays(tsMain.map);
 		node.pathEdited();
+		node.owner.resumeUpdate();
 	}
 	return type; // return type, may be 'home'
 };
@@ -723,6 +649,26 @@ tsPointList.addRoutedPoint = function(latLng) {
 };
 
 /**
+ * Stop this list from being updated (recalculated)
+ * until resumeUpdate called.
+ * 
+ */
+tsPointList.pauseUpdate = function() {
+	this.updateActive = false;	
+};
+
+/**
+ * Allow list to be update (recalculated) once again &
+ * update immediately.
+ * 
+ */
+tsPointList.resumeUpdate = function()  {
+	this.updateActive = true;
+	this.update();
+};
+
+
+/**
  * Update/recalculate length and height extents of this list
  * by calling update of each node.
  * 
@@ -732,14 +678,105 @@ tsPointList.addRoutedPoint = function(latLng) {
  * is not updated
  */
 tsPointList.update = function(updateHeightExtents) {
-	var nextNode;
+	if (!this.updateActive) return;
+	var next;
 	var updateLength = false;
-	for (tsListIterator.reset();  nextNode = tsListIterator.listNextNode(), !next.done;) {
+	for (tsListIterator.reset();  next = tsListIterator.listNextNode(), !next.done;) {
+		var nextNode = next.value;
 		if (nextNode.length == null) updateLength = true;
 		nextNode.update(updateLength, updateHeightExtents);
 	}
+	this.totalLength = 0;
+	if (this.tail) this.totalLength = this.tail.cumulLength;
+	tsDistanceCtrl.update(this.totalLength/1000.0);
 	
-}
+};
+/**
+ * Update/recalculate various parameters of this node.
+ * 
+ * @param updateLength
+ * If true, will update lengths of this node and its points.
+ * 
+ * @param updateHeightExtents
+ * If true, will update owner's height extents based on height
+ * of node points and their children. 
+ */
+tsNode.update = function(updateLength, updateHeightExtents) {
+
+	if (!updateLength && !updateHeightExtents) return; // nothing to do
+	
+	var markerEvery = 1000.0; // metres
+	
+	var lastPointCumulLength = 0; // need to track cur and last point cumul length for km markers
+	
+	if (updateLength) { 
+		this.clearKmMarkers(); // these will need to be recalculated
+		if (this.previous) lastPointCumulLength = this.previous.cumulLength; // use previous node cumul length as base
+	}
+	
+	var lastPointLatLng = null;
+	var curPointCumulLength = lastPointCumulLength;
+
+	for (var i = 0; i < this.path.getLength(); i++) {
+		var curPointLatLng = this.path.getAt(i);
+		
+		if (updateLength) {
+			if (lastPointLatLng) {
+				// find length from previous, add to cumul total for path
+				curPointCumulLength += tsComputeDistBtw(lastPointLatLng, curPointLatLng);
+			}
+			curPointLatLng.cumulLength = curPointCumulLength;
+			
+			var lastFloorKm = Math.floor(lastPointCumulLength/markerEvery);
+			var curFloorKm = Math.floor(curPointCumulLength/markerEvery);
+			
+			// do we need to add a km marker?
+			while (lastFloorKm<curFloorKm) {
+				// look for all transitions in floor after dividing by markerEvery length e.g. 2>4 km, need markers for 3,4 
+				lastFloorKm = lastFloorKm+1;
+				
+				var kmMarkerLatLng = tsComputeOffset(lastPointLatLng, curPointLatLng, lastFloorKm*markerEvery-lastPointCumulLength);
+				var kmMarkerImage = "markers/marker_"+lastFloorKm+".png";
+				var kmMarkerOptions = {
+					position : kmMarkerLatLng,
+					map : tsMain.map,
+					icon: kmMarkerImage,
+				};
+				if (!this.kmMarkers) this.kmMarkers = [];
+				this.kmMarkers.push(new google.maps.Marker(kmMarkerOptions));
+				
+			}
+		}
+
+		if (updateHeightExtents && curPointLatLng.height != null) {
+			this.owner.updateHeightExtents(curPointLatLng.height);
+		}
+
+		// update any children of curPoint
+		if (curPointLatLng.children) {
+			var lastChildLatLng = curPointLatLng;
+			var childCumulLength = curPointCumulLength;
+			for (var j=0; j<curPointLatLng.children.length;j++) {
+				var curChildLatLng = curPointLatLng.children[j];
+				if (updateLength) {
+					childCumulLength+=tsComputeDistBtw(lastChildLatLng, curChildLatLng);
+					curChildLatLng.cumulLength = childCumulLength; 
+					lastChildLatLng = curChildLatLng;
+				}
+				if (updateHeightExtents && curChildLatLng.height != null) {
+					this.owner.updateHeightExtents(curChildLatLng.height);
+				}
+			}
+		}
+		
+		// update for next iteration
+		lastPointLatLng = curPointLatLng;
+		lastPointCumulLength = curPointCumulLength;
+	}
+	
+	this.cumulLength = curPointCumulLength; // node stores cumul length of last point
+
+};
 
 tsPointList.lookupHeight = function() {
 	
