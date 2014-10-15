@@ -25,7 +25,8 @@ function tsError(msg) {
 };
 
 function tsAssert(condition, msg) {
-	if (tsDebug && !condition) window.alert("Assertion failed: "+msg);
+	if (tsDebug && !condition) 
+            window.alert("Assertion failed: "+msg);
 	console.assert(condition,msg);
 }
 

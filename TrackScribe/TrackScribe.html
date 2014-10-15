@@ -1,7 +1,7 @@
-<!DOCTYPE html">
+<!DOCTYPE html>
 <html>
 <head>
-<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
 <style type="text/css">
 html {
@@ -19,11 +19,13 @@ body {
 }
 </style>
 <script type="text/javascript"
-	src="https://maps.googleapis.com/maps/api/js?libraries=geometry&key=AIzaSyCcUEAW1DD7QfJYDm8rD1dzAQd1T-vbuSI&sensor=false">
+	src="https://maps.googleapis.com/maps/api/js?libraries=geometry&amp;key=AIzaSyCb9Y8kXHGsFP36jgIiKklw7-dQnskK9ls&amp;sensor=false">
     </script>
 <script type="text/javascript" src="svg1.0.0-rc.6-1.js">
     </script>
 <script type="text/javascript" src="TrackScribeHelpers.js">
+    </script>
+<script type="text/javascript" src="TrackScribeAppearance.js">
     </script>
 <script type="text/javascript" src="TrackScribeList.js">
     </script>
@@ -43,40 +45,45 @@ body {
 	<div id="dummyDiv">
 		<div class="controlContainer" id="toolPalette">
 			<div class="controlElement controlElementInactive" id="dragTool" title="Move map">
-				<img src="handdrag.png" height=35ex>
+				<img src="handdrag.png" class="controlButton" alt="Drag tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="manualPointTool"
 				title="Manually add points to path">
-				<img src="point2point.png" height=35ex>
+				<img src="point2point.png" class="controlButton" alt="Manual point tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="manualNodeTool"
 				title="Manually add a new step">
-				<img src="point2node.png" height=35ex>
+				<img src="point2node.png" class="controlButton" alt="Manual node tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="routeTool"
 				title="Auto-route path to point">
-				<img src="route.png" height=35ex>
+				<img src="route.png" class="controlButton" alt="Routed node tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="deleteTool"
 				title="Delete a node, click tool again to delete last node">
-				<img src="deletenode.png" height=35ex>
+				<img src="deletenode.png" class="controlButton" alt="Delete tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="heightTool"
 				title="Lookup height of current location">
-				<img src="height.png" height=35ex>
+				<img src="height.png" class="controlButton" alt="Height tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="loadTool" style="padding:0ex;"
 				title="Load track from a CSV file">
-				<button id="loadToolButton"><img class="controlPaddingOnly" src="loadtrack.png" height=35ex"></button>
+				<button id="loadToolButton">
+                                    <img class="controlPaddingOnly controlButton" src="loadtrack.png" alt="Load file tool">
+                                </button>
 				<input type="file" id="inputCSV" style="display:none;">
 			</div>
 			<div class="controlElement controlElementInactive" id="saveTool" style="padding:0ex;"
 				title="Save track to a CSV file">
-				<button id="saveToolButton"><img class="controlPaddingOnly" src="savetrack.png" height=35ex"></button>
+				<button id="saveToolButton">
+                                    <img class="controlPaddingOnly controlButton" src="savetrack.png" alt="Save file tool">
+                                </button>
 			</div>
+                </div>
 	</div>
 	
-	<div id="dummyDiv" style="display:none">
+	<div id="dummyDiv2" style="display:none">
 		<div class="controlContainerHorizontal" id="statusBar" style="width:90%; padding-bottom: 3.5ex">
 			<div id="elevationContainer" class="controlElement controlElementBasic" 
 				style="height: 20ex; overflow-y: scroll; overflow-x: scroll;">
