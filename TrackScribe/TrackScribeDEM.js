@@ -1,11 +1,12 @@
 "use strict";
 
-var tsLookupStatus = {
-	SUCCESS: {value: 0, details: "Success"},
-	REQ_ERROR: {value: -1, details: "Request error"}, // xhr error or timeout
-	REQ_TIMEOUT: {value: -2, details: "Request time out"},
-	DATA_ERROR: {value: -3, details: "Data error"}, // e.g. unknown data format
+// create nz.twlee.demlookup namespace
+var nz = {
+    twlee: {
+            demlookup:{}
+    }
 };
+
 
 function tsLookupDEM(latLng, latLngs, callback) {
 	// latLng = single latLng, latLngs = array
@@ -171,8 +172,8 @@ tsElevationPlot.fit = function() {
 	var transform = this.graph.transform();
 	this.graph.translate(transform.x-bbox.x,transform.y-bbox.y);
 	
-	this.svg.width(tsMultiplyCSSLength(this.svg.width(),bbox.width/viewbox.width,100));
-	this.svg.height(tsMultiplyCSSLength(this.svg.height(),bbox.height/viewbox.height,100));
+	this.svg.width(ts.multiplyCSSLength(this.svg.width(),bbox.width/viewbox.width,100));
+	this.svg.height(ts.multiplyCSSLength(this.svg.height(),bbox.height/viewbox.height,100));
 	var bbox = this.svg.bbox();
 	var viewbox = this.svg.viewbox();
 
@@ -203,7 +204,7 @@ tsElevationPlot.update = function() {
 		this.graph = this.svg.group();
 	}
 	
-	var extent = tsPointList.getExtent();
+	var extent = ts.pointList.getExtent();
 	var min_y = extent.minHeight;
 	var max_y = extent.maxHeight;
 	if (!isFinite(min_y) || !isFinite(max_y)) {
@@ -309,7 +310,7 @@ tsElevationPlot.update = function() {
 	if (this.plot_elements==null) this.plot_elements = this.graph.group();
 	
 	var next;
-	for (tsListIterator.reset();  next = tsListIterator.listNextNode(), !next.done;) {
+	for (ts.list.listIterator.reset();  next = ts.list.listIterator.listNextNode(), !next.done;) {
 		this.plotNode(next.value);
 
 	}
@@ -329,17 +330,17 @@ tsElevationPlot.plotNode = function(curNode) {
 		nodegroup.clear();
 	}
 	var next,p,q;
-	for (tsNodeIterator.reset(curNode);  next = tsNodeIterator.next3d(), !next.done;) {
-		var curLatLng = tsNodeIterator.curIterPoint;
+	for (ts.list.nodeIterator.reset(curNode);  next = ts.list.nodeIterator.next3d(), !next.done;) {
+		var curLatLng = ts.list.nodeIterator.curIterPoint;
 		if (!curLatLng.height) continue;
-		if (!tsNodeIterator.curIterIsChild) {
+		if (!ts.list.nodeIterator.curIterIsChild) {
 			// plot points for 2d points (i.e. non-children)
 			
-			if (!tsNodeIterator.curPointIsTerminal) {
+			if (!ts.list.nodeIterator.curPointIsTerminal) {
 				// for all intermediate points,
 				// plot circles similar to maps display
 				// TODO: trigger these on/off depending on editable status?
-				if (curNode.type===tsNodeTypes.MANUAL) {
+				if (curNode.type===ts.list.nodeTypes.MANUAL) {
 					p = this.x2p(curLatLng.cumulLength);
 					q = this.y2q(curLatLng.height);
 					nodegroup.circle(symbol_size)
@@ -352,12 +353,12 @@ tsElevationPlot.plotNode = function(curNode) {
 			else {
 				// terminal point: draw marker
 				switch (curNode.type) {
-					case tsNodeTypes.HOME:
+					case ts.list.nodeTypes.HOME:
 						// do not draw home node
 						break;
-					case tsNodeTypes.MANUAL:
-					case tsNodeTypes.TOROUTE:
-					case tsNodeTypes.ROUTED:
+					case ts.list.nodeTypes.MANUAL:
+					case ts.list.nodeTypes.TOROUTE:
+					case ts.list.nodeTypes.ROUTED:
 						p = this.x2p(curLatLng.cumulLength);
 						q = this.y2q(curLatLng.height);
 						nodegroup.rect(symbol_size,symbol_size)
@@ -370,7 +371,7 @@ tsElevationPlot.plotNode = function(curNode) {
 		}
 			
 		// draw line if lastLatLng is valid
-		var lastLatLng = tsNodeIterator.prevIterPoint;
+		var lastLatLng = ts.list.nodeIterator.prevIterPoint;
 		if (lastLatLng && lastLatLng.height) {
 			nodegroup.line(this.x2p(lastLatLng.cumulLength), this.y2q(lastLatLng.height),
 						   this.x2p(curLatLng.cumulLength), this.y2q(curLatLng.height))

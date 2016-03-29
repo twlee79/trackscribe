@@ -1,33 +1,40 @@
 "use strict";
 
-var tsDebug = true;
-var tsDeg2Rad = Math.PI/180.0;
-var tsRad2Deg = 180.0/Math.PI;
-var tsEarthR = 6378137; // radius of earth in metres
+var ts = ts || {};
 
-function tsDebugInfo(msg) {
+ts.const = {}
+
+ts.debug = true;
+ts.const.deg2Rad = Math.PI/180.0;
+ts.const.rad2Deg = 180.0/Math.PI;
+ts.const.earthR = 6378137; // radius of earth in metres
+
+ts.debugInfo = function(msg) {
 	// silently log msg to console
 	msg = "Info: "+msg;
 	console.log(msg);
 };
 
-function tsWarning(msg) {
+ts.warning = function(msg) {
 	msg = "Warning! "+msg;
-	if (tsDebug) window.alert(msg);
+	if (ts.debug) window.alert(msg);
 	console.log(msg);
 };
 
-function tsError(msg) {
+ts.error = function(msg) {
 	msg = "ERROR! "+msg;
 	window.alert(msg);
 	console.log(msg);
 	throw Error(msg);
 };
 
-function tsAssert(condition, msg) {
-	if (tsDebug && !condition) 
+ts.assert = function(condition, msg) {
+        if (msg==null) msg = "(no message)";
+	if (ts.debug && !condition) {
             window.alert("Assertion failed: "+msg);
-	console.assert(condition,msg);
+            console.assert(condition,msg);
+            console.trace();
+        }
 }
 
 /**
@@ -38,7 +45,7 @@ function tsAssert(condition, msg) {
  * @param max maximum return result, null to ignore
  * @returns CSS length multipled by factor with same unit as initial length.
  */
-function tsMultiplyCSSLength(length,factor,min,max) {
+ts.multiplyCSSLength = function(length,factor,min,max) {
 	var parsedLength = /([+\-\.0-9]+)(.*)/.exec(length);
 	if (!parsedLength) throw TypeError("Invalid CSS length "+length);
 	var value = parseFloat(parsedLength[1]);
@@ -49,31 +56,31 @@ function tsMultiplyCSSLength(length,factor,min,max) {
 };
 
 
-function tsComputeDistBtw(latLng1, latLng2) {
+ts.computeDistBtw = function(latLng1, latLng2) {
 	//return google.maps.geometry.spherical.computeDistanceBetween(latLng1,latLng2);
 	// convert to radians
-	var lat1 = latLng1.lat() * tsDeg2Rad;
-	var lng1 = latLng1.lng() * tsDeg2Rad;
-	var lat2 = latLng2.lat() * tsDeg2Rad;
-	var lng2 = latLng2.lng() * tsDeg2Rad;
+	var lat1 = latLng1.lat() * ts.const.deg2Rad;
+	var lng1 = latLng1.lng() * ts.const.deg2Rad;
+	var lat2 = latLng2.lat() * ts.const.deg2Rad;
+	var lng2 = latLng2.lng() * ts.const.deg2Rad;
 	
 	var dLat = lat2 - lat1;
 	var dLng = lng2 - lng1;
 	var sin_dLat = Math.sin(dLat/2.0);
 	var sin_dLng = Math.sin(dLng/2.0);
 	var a = (sin_dLat*sin_dLat) + (sin_dLng*sin_dLng*Math.cos(lat1)*Math.cos(lat2));
-	var d = tsEarthR * (2 * Math.atan2(Math.sqrt(a),Math.sqrt(1.0-a)));
+	var d = ts.const.earthR * (2 * Math.atan2(Math.sqrt(a),Math.sqrt(1.0-a)));
 	return d;
 };
 
-function tsComputeOffset(latLng1, latLng2, distance) {
+ts.computeOffset = function(latLng1, latLng2, distance) {
 	// return a LatLng which is distance away from latLng1 in the heading of latLng1 -> latLng2
     var heading = google.maps.geometry.spherical.computeHeading(latLng1, latLng2);
     return google.maps.geometry.spherical.computeOffset(latLng1, distance, heading);
 
-}
+};
 
-function tsGenerateReverseDict(theEnum) {
+ts.generateReverseDict = function(theEnum) {
 	// generate a reverse lookup of value to key from an enum object containing attributes with values
 	var ret = {};
 	for (var key in theEnum) {
@@ -81,39 +88,39 @@ function tsGenerateReverseDict(theEnum) {
 		ret[value] = key;
 	};
 	return ret;
-}
+};
 
-function tsDownloadCSV(filename, csv) {
+ts.downloadCSV = function(filename, csv) {
 	// download string csv using Data URI
 	var dl = document.createElement('A');
     dl.setAttribute('HREF', 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv));
     dl.setAttribute('DOWNLOAD', filename);
     dl.click();
-}
+};
 
-function tsPadTime(number) {
+ts.padTime = function(number) {
 	var absNum = Math.abs(number);
     var floorNum = Math.floor(absNum);
     
     return (floorNum < 10 ? '0' : '') + floorNum;
 	
-}
+};
 
 
-function tsGetISODate() {
+ts.getISODate = function() {
     var localTime = new Date();
     
 
     return localTime.getFullYear() 
-        + '-' + tsPadTime(localTime.getMonth()+1)
-        + '-' + tsPadTime(localTime.getDate());
+        + '-' + ts.padTime(localTime.getMonth()+1)
+        + '-' + ts.padTime(localTime.getDate());
 
-}
+};
 
-function tsGetISOTime() {
+ts.getISODate = function() {
     var localTime = new Date();
     
-    function tsPadTime(number) {
+    function padTime(number) {
     	var absNum = Math.abs(number);
         var floorNum = Math.floor(absNum);
         
@@ -124,29 +131,24 @@ function tsGetISOTime() {
     var tzOffset = localTime.getTimezoneOffset();
     var tzSign = tzOffset < 0 ? '+' : '-'; // offset sign is opposite what should be printed
     return localTime.getFullYear() 
-        + '-' + tsPadTime(localTime.getMonth()+1)
-        + '-' + tsPadTime(localTime.getDate())
-        + 'T' + tsPadTime(localTime.getHours())
-        + ':' + tsPadTime(localTime.getMinutes()) 
-        + ':' + tsPadTime(localTime.getSeconds()) 
-        + tzSign + tsPadTime(tzOffset / 60) + tsPadTime(tzOffset % 60);
+        + '-' + ts.padTime(localTime.getMonth()+1)
+        + '-' + ts.padTime(localTime.getDate())
+        + 'T' + ts.padTime(localTime.getHours())
+        + ':' + ts.padTime(localTime.getMinutes()) 
+        + ':' + ts.padTime(localTime.getSeconds()) 
+        + tzSign + ts.padTime(tzOffset / 60) + ts.padTime(tzOffset % 60);
 
-}
+};
 
 /**
  * Compares two latLng's for equality with a precision of 1e-6 (~0.11m)
  * @param latLng1
  * @param latLng2
  */
-function tsLatLngEquals(latLng1, latLng2) {
+ts.latLngEquals = function(latLng1, latLng2) {
 	return Math.abs(latLng1.lat()-latLng2.lat())<1e-6 &&
 		   Math.abs(latLng1.lng()-latLng2.lng())<1e-6;
-}
+};
 
 
 
-// convert SVG polygons to path with http://readysetraphael.com/
-// ensure centred around origin
-var tsHouseSVG = 'M 0,-70.866 -70.866,0 -42.52,0 -42.52,70.866 42.52,70.866 42.52,0 70.866,0 42.518,-28.349 42.52,-56.693 28.347,-56.692 28.348,-42.519 z';
-var tsDottedSVG = 'M 0,-1 0,1';
-var tsSquareSVG = 'M 1.1,1.1 1.1,-1 -1,-1 -1,1.1 z';

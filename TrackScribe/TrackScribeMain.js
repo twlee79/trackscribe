@@ -1,7 +1,9 @@
 "use strict";
 
-// Disable business poits
-var tsStyles =[
+var ts = ts || {};
+
+// Disable business pois
+ts.mapStyles =[
     {
         featureType: "poi.business",
         elementType: "labels",
@@ -12,40 +14,38 @@ var tsStyles =[
 ];
 
 
-var tsMain = {
+ts.main = {
 	mapOptions : {
 			center : new google.maps.LatLng(-36.884391,174.749642),
 			zoom : 16,
 			mapTypeId : google.maps.MapTypeId.ROADMAP,
-		    styles: tsStyles 
+		    styles: ts.mapStyles 
 		},
 	map : null,
 	directionsService : null,
 };
 
-tsMain.initialize = function() {
+ts.main.initializeMap = function() {
 	this.map = new google.maps.Map(document.getElementById("map-canvas"),
 			this.mapOptions);
 	this.directionsService = new google.maps.DirectionsService();
 	google.maps.event.addListenerOnce(this.map, 'idle', this.mapReady );
 };
 
-tsMain.setCursor = function(cursor) {
+ts.main.setCursor = function(cursor) {
 	this.map.setOptions({draggableCursor:cursor});
 };
 
-tsMain.mapReady = function() {
-	tsMain.elevationPlot = Object.create(tsElevationPlot);
-	//tsMain.elevationPlot.initialize([0,100,230],[10,15,4]);
+ts.main.mapReady = function() {
+	ts.main.elevationPlot = Object.create(tsElevationPlot);
+	//ts.main.elevationPlot.initialize([0,100,230],[10,15,4]);
 	
 };
 
-
-
-function tsInitialize() {
-	tsMain.initialize();
-	tsInitializeList();
-	tsInitializeControls();
+ts.main.initialize = function() {
+	ts.main.initializeMap();
+	ts.list.initialize();
+	ts.controls.initialize();
 }
 
 /*
@@ -61,11 +61,11 @@ function testSVG(svg) {
     shape.setAttributeNS(null, "points", "5,5 45,45 5,45 45,5");
     shape.setAttributeNS(null, "fill", "none");
     shape.setAttributeNS(null, "stroke", "black");	
-    tsMain.elevationSVG.appendChild(shape);
+    ts.main.elevationSVG.appendChild(shape);
 }*/
 
 
-google.maps.event.addDomListener(window, 'load', tsInitialize);
+google.maps.event.addDomListener(window, 'load', ts.main.initialize);
 
 
 
