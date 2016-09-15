@@ -572,6 +572,7 @@ ts.pointList = {
     tail : null,
     totalLength : 0,
     updateActive : true,
+    segmentQueue : [], // for updating heights
 };
 ts.list.node.owner = ts.pointList; // only one list for so all nodes belong to it
 
@@ -786,72 +787,96 @@ ts.pointList.update = function(updateHeightExtents) {
 
 ts.pointList.lookupHeight = function() {
     
-    var curNode = this.head;
-    var latLngs = [];
-    var that = this;
-    if (this.pendingDEMLookup) return;
-    console.trace();
+    // Lookup height for whole path where elevation information is lacking
+    // As only looking up for certain parts of path, look for continuous segments
+    // that are lacking elevation information, and store these in a queue
+    // then send request to server to look these up one by one
     
-    // generate an array of points to lookup from whole list
+    // As elevation requests are asynchronous, need to be careful of the following:
+    // Path changed prior to lookup returning:
+    //      Need to check if next point in pointList still == next point in
+    //      DEM path, if so, use interpolated points as children, otherwise
+    //      discard interpolated points
+    //      BUT NO ACCESS TO NEXT PATH POINT FROM A POINT!!!!
+    //      Snapshot of Iterator to check path is still correct?
+    //          WON'T WORK, CHANGING PATH WILL INVALIDATE THIS ITERATOR IN UNPREDICTABLE WAYS
+    // Queue being added to before lookup returns
+    //      Only send one request and wait for it to reutn before sending next
+    //      TODO: Check no active request before sending new one
+    
+    // go through list, find continuous segments with no elevation
+    var segment;
+    
     var next;
     for (ts.list.listIterator.reset();  next = ts.list.listIterator.next2d(), !next.done;) {
         var curLatLng = ts.list.listIterator.curIterPoint;
         var lastLatLng = ts.list.listIterator.prevIterPoint;
-        if (lastLatLng && (lastLatLng.height == null || curLatLng == null)) {
+        if (lastLatLng && (lastLatLng.height == null || curLatLng.height == null)) {
             // if either end of this pair of latLngs has no height
             // then need to lookup
-            latLngs.push(lastLatLng);
-            latLngs.push(curLatLng);
-            //console.log(i,lastLatLng.lat(),lastLatLng.lng(),latLng.lat(),latLng.lng());
+            if (segment===null) {
+                // create a new segment
+                segment = { latLngs : [], iterator : ts.list.listIterator.snapshot()};
+                this.segmentQueue.unshift(segment);
+                segment.latLngs.push(lastLatLng);
+            }
+            segment.latLngs.push(curLatLng);
+        } else {
+            // reached a portion of path with elevation set
+            if (segment!==null) segment = null;
+                // prepare for next segment
         }
     }
-    if (latLngs.length==0) return; 
-    this.pendingDEMLookup = true;
-    tsLookupDEM(null,latLngs, function(lookupResult, lookupStatus) {
-        if (lookupStatus==tsLookupStatus.SUCCESS) {
-            var query_i;
-            var queryLatLng;
-            query_i = 0;
-            for (var result_i=0; result_i< lookupResult.length; result_i++) {
-                var resultLatLng = lookupResult[result_i]; // result is an array of latLngs decorated with index and height
-                console.log(result_i,resultLatLng.lat(),resultLatLng.lng(),resultLatLng.height,resultLatLng.index)
-                if (resultLatLng.index==0) {
-                    // first point in returned DEM lookup = start point
-                    queryLatLng = latLngs[query_i];
-                    if (!ts.latLngEquals(queryLatLng,resultLatLng)) {
-                        //console.log(queryLatLng.lat(),queryLatLng.lng());
-                        //console.log(resultLatLng.lat(),resultLatLng.lng());
-                        ts.error("Query/response latlng do not match");
-                    }
-                    ts.assert (queryLatLng.height == null || queryLatLng.height == resultLatLng.height);
-                    queryLatLng.height = resultLatLng.height;
-                    ts.assert(!queryLatLng.children || queryLatLng.children.length==0);
-                    console.log("start");
-                }
-                else if (resultLatLng.index<0) {
-                    // last point in returned DEM lookup = end point
-                    query_i++; 
-                    queryLatLng = latLngs[query_i];
-                    ts.assert (queryLatLng.height == null || queryLatLng.height == resultLatLng.height); 
-                    queryLatLng.height = resultLatLng.height; 
-                    query_i++; 
-                    console.log("End");
-                    continue;
-                } else {
-                    // interpolated point in DEM lookup
-                    if (queryLatLng.children == null) queryLatLng.children = [];
-                    queryLatLng.children.push(resultLatLng);
-                }
-                
-            }
-            that.update();
-        } else {
-            ts.warning(lookupStatus.details);
-        }
-        that.pendingDEMLookup = false;
-    });
+    
+    if (this.pendingDEMLookup) return;
+    this.lookupNextSegmentHeight();
 };
 
+ts.pointList.lookupNextSegmentHeight = function() {
+    var that = this;
+    if (this.segmentQueue.length>0) {
+        var segment = this.segmentQueue.pop();
+        segment.curLatLng = segment.iterator.curIterPoint;
+        segment.lastLatLng = segment.iterator.prevIterPoint;
+        ts.dem.getElevationAlongPath(segment.latLngs, function(results, status) {
+            if (status==nztwlee.demlookup.ElevationStatus.OK) {
+                for (var i=0; i< results.length; i++) {
+                    var result = results[i];
+                    var resultLatLng = result.location;
+                    console.log(i,resultLatLng.lat(),resultLatLng.lng(),result.elevation,result.pathIndex)
+                    if (result.pathIndex!=null) {
+                        // valid index = point in original path
+                        var
+                        queryLatLng = segmentlatLngs[query_i];
+                        if (!ts.latLngEquals(queryLatLng,resultLatLng)) {
+                            //console.log(queryLatLng.lat(),queryLatLng.lng());
+                            //console.log(resultLatLng.lat(),resultLatLng.lng());
+                            ts.error("Query/response latlng do not match");
+                        }
+                        ts.assert (queryLatLng.height == null || queryLatLng.height == resultLatLng.height);
+                        segment.itara.height = resultLatLng.height;
+                        ts.assert(!queryLatLng.children || queryLatLng.children.length==0);
+                        console.log("matched");
+                        query_i++; 
+                        var = next = segment.iterator.next2d();
+                        if (next.done) break;
+                        continue;
+                    } else {
+                        // interpolated point in DEM lookup
+                        if (queryLatLng.children == null) queryLatLng.children = [];
+                        queryLatLng.children.push(resultLatLng);
+                    }
+
+                }
+                that.update();
+            } else {
+                ts.warning(lookupStatus.details);
+            }
+            //that.pendingDEMLookup = false;
+        });
+    }
+    
+};
 
 
 /**
@@ -1017,16 +1042,42 @@ ts.list.listIterator = {
 };
 
 /**
- * Reset iterator for iteration from beginning.
+ * Reset iterator for iteration from beginning of from specified node.
  */
 ts.list.listIterator.reset = function(theNode) {
+    ts.assert (ts.list.node.isPrototypeOf(theNode), "expected a ts.list.node");
     this.curNode = null;
     this.prevIterPoint = null;
     this.curIterPoint = null;
     this.curIterIsChild = false; 
     this.resetPointIterator();
     this.resetChildIterator();
-    this.nextNode = this.theList.head;
+    if (theNode==null) this.nextNode = this.theList.head;
+    else this.nextNode = theNode; // not tested
+};
+
+/**
+ * 
+ * @returns {a snapshot of current iterator state}
+ */
+ts.list.listIterator.snapshot = function() {
+    var snapshot = Object.create(this);
+
+    snapshot.curNode = this.curNode;
+    snapshot.nextNode = this.nextNode;
+    
+    snapshot.curPoint = this.curPoint;
+    snapshot.nextPointIndex = this.nextPointIndex;
+    snapshot.curPointIsTerminal = this.curPointIsTerminal;
+    
+    snapshot.curChild = this.curChild;
+    snapshot.nextChildIndex = this.nextChildIndex;
+    
+    snapshot.prevIterPoint = this.prevIterPoint;
+    snapshot.curIterPoint = this.curIterPoint;
+    snapshot.curIterIsChild = this.curIterIsChild;
+
+    return snapshot;
 };
 
 

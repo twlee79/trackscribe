@@ -1,12 +1,23 @@
 "use strict";
 
-// create nz.twlee.demlookup namespace
-var nz = {
-    twlee: {
-            demlookup:{}
-    }
+var ts = ts || {};
+
+ts.dem = {};
+
+ts.dem.getElevationAlongPath = function(latLngs, callback) {
+        // LocationElevationRequest contains {locations[]: LatLng}
+    // callback(results, status) where results is [] of ElevationResults and status is status
+    // how to return extended error information?
+    var request = {path: latLngs};
+    nztwlee.demlookup.ElevationService.prototype.getElevationAlongPath(request,callback);
+    
+    // TODO: Use either Google elevation API or this function. 
+    // Method: do a path lookup with a fixed step size, and location lookup, then intermingle the points to
+    // give original path plus interpolated points
+    // TODO: If path too long and naive interpolation is performed, does nztwlee dem return original points?
 };
 
+var nzElevationService = new nztwlee.demlookup.ElevationService;
 
 function tsLookupDEM(latLng, latLngs, callback) {
 	// latLng = single latLng, latLngs = array
