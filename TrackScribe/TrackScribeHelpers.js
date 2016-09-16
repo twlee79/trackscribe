@@ -146,8 +146,8 @@ ts.getISODate = function() {
  * @param latLng2
  */
 ts.latLngEquals = function(latLng1, latLng2) {
-	return Math.abs(latLng1.lat()-latLng2.lat())<1e-6 &&
-		   Math.abs(latLng1.lng()-latLng2.lng())<1e-6;
+    return Math.abs(latLng1.lat()-latLng2.lat())<1e-6 &&
+               Math.abs(latLng1.lng()-latLng2.lng())<1e-6;
 };
 
 

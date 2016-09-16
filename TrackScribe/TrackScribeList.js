@@ -798,8 +798,7 @@ ts.pointList.lookupHeight = function() {
     //      DEM path, if so, use interpolated points as children, otherwise
     //      discard interpolated points
     //      BUT NO ACCESS TO NEXT PATH POINT FROM A POINT!!!!
-    //      Snapshot of Iterator to check path is still correct?
-    //          WON'T WORK, CHANGING PATH WILL INVALIDATE THIS ITERATOR IN UNPREDICTABLE WAYS
+    //      Store copy of node for refinding first point, then iterate through it
     // Queue being added to before lookup returns
     //      Only send one request and wait for it to reutn before sending next
     //      TODO: Check no active request before sending new one
@@ -816,7 +815,7 @@ ts.pointList.lookupHeight = function() {
             // then need to lookup
             if (segment===null) {
                 // create a new segment
-                segment = { latLngs : [], iterator : ts.list.listIterator.snapshot()};
+                segment = { latLngs : [], firstNode : ts.list.listIterator.curNode};
                 this.segmentQueue.unshift(segment);
                 segment.latLngs.push(lastLatLng);
             }
@@ -836,37 +835,50 @@ ts.pointList.lookupNextSegmentHeight = function() {
     var that = this;
     if (this.segmentQueue.length>0) {
         var segment = this.segmentQueue.pop();
-        segment.curLatLng = segment.iterator.curIterPoint;
-        segment.lastLatLng = segment.iterator.prevIterPoint;
         ts.dem.getElevationAlongPath(segment.latLngs, function(results, status) {
             if (status==nztwlee.demlookup.ElevationStatus.OK) {
-                for (var i=0; i< results.length; i++) {
-                    var result = results[i];
-                    var resultLatLng = result.location;
-                    console.log(i,resultLatLng.lat(),resultLatLng.lng(),result.elevation,result.pathIndex)
-                    if (result.pathIndex!=null) {
-                        // valid index = point in original path
-                        var
-                        queryLatLng = segmentlatLngs[query_i];
-                        if (!ts.latLngEquals(queryLatLng,resultLatLng)) {
-                            //console.log(queryLatLng.lat(),queryLatLng.lng());
-                            //console.log(resultLatLng.lat(),resultLatLng.lng());
-                            ts.error("Query/response latlng do not match");
-                        }
-                        ts.assert (queryLatLng.height == null || queryLatLng.height == resultLatLng.height);
-                        segment.itara.height = resultLatLng.height;
-                        ts.assert(!queryLatLng.children || queryLatLng.children.length==0);
-                        console.log("matched");
-                        query_i++; 
-                        var = next = segment.iterator.next2d();
-                        if (next.done) break;
-                        continue;
-                    } else {
-                        // interpolated point in DEM lookup
-                        if (queryLatLng.children == null) queryLatLng.children = [];
-                        queryLatLng.children.push(resultLatLng);
+                var next;
+                var curLatLng;
+                try {
+                    for (ts.list.listIterator.reset(segment.firstNode); 
+                        next = ts.list.listIterator.next2d(), !next.done;) {
+                            // reset iterator to first node in segment, then iterate until finding starting point
+                            var latLng = ts.list.listIterator.curIterPoint;
+                            if (ts.latLngEquals(latLng, results[0].location)) {
+                                curLatLng = latLng;
+                                ts.assert (curLatLng.height == null || curLatLng.height == resultLatLng.height);
+                                curLatLng.height = results[0].elevation;
+                                console.log("Found start of path");
+                                break;
+                            }
                     }
+                    if (curLatLng==null) throw new Error("Could not find start of segment in point list - point list must have changed");
+                    var children = [];
+                    for (var result_i=1; result_i< results.length; result_i++) {
+                        var result = results[result_i];
+                        var resultLatLng = result.location;
+                        resultLatLng.height = result.elevation;
+                        console.log(result_i,resultLatLng.lat(),resultLatLng.lng(),resultLatLng.height,result.pathIndex);
 
+                        if (result.pathIndex==null) {
+                            // invalid index = interpolated point
+                            children.push(resultLatLng); // add to list of children
+                        } else {
+                            next = ts.list.listIterator.next2d();
+                            curLatLng = ts.list.listIterator.curIterPoint;
+                            if (next.done || !ts.latLngEquals(curLatLng,resultLatLng)) {
+                                // did not match expected next path point
+                                throw new Error("Could continue tracting segment in point list - point list must have changed");
+                                break;
+                            }
+                            ts.assert (curLatLng.height == null || curLatLng.height == resultLatLng.height);
+                            curLatLng.height = resultLatLng.height;
+                            ts.list.listIterator.prevIterPoint.children = children;
+                        }
+                        console.log(children);
+                    }
+                } catch(e) {
+                    console.log(e.message);
                 }
                 that.update();
             } else {
@@ -1045,7 +1057,7 @@ ts.list.listIterator = {
  * Reset iterator for iteration from beginning of from specified node.
  */
 ts.list.listIterator.reset = function(theNode) {
-    ts.assert (ts.list.node.isPrototypeOf(theNode), "expected a ts.list.node");
+    ts.assert (theNode==null || ts.list.node.isPrototypeOf(theNode), "expected a ts.list.node");
     this.curNode = null;
     this.prevIterPoint = null;
     this.curIterPoint = null;
@@ -1055,31 +1067,6 @@ ts.list.listIterator.reset = function(theNode) {
     if (theNode==null) this.nextNode = this.theList.head;
     else this.nextNode = theNode; // not tested
 };
-
-/**
- * 
- * @returns {a snapshot of current iterator state}
- */
-ts.list.listIterator.snapshot = function() {
-    var snapshot = Object.create(this);
-
-    snapshot.curNode = this.curNode;
-    snapshot.nextNode = this.nextNode;
-    
-    snapshot.curPoint = this.curPoint;
-    snapshot.nextPointIndex = this.nextPointIndex;
-    snapshot.curPointIsTerminal = this.curPointIsTerminal;
-    
-    snapshot.curChild = this.curChild;
-    snapshot.nextChildIndex = this.nextChildIndex;
-    
-    snapshot.prevIterPoint = this.prevIterPoint;
-    snapshot.curIterPoint = this.curIterPoint;
-    snapshot.curIterIsChild = this.curIterIsChild;
-
-    return snapshot;
-};
-
 
 /**
  * Iterator for nodes in list.
