@@ -2,7 +2,125 @@
 
 var ts = ts || {};
 
-ts.dem = {};
+ts.dem = {
+    segmentQueue : [], // queue for updating heights
+    pendingDEMLookup : false,
+    data : null, // chart data
+    chart : null, // chart
+    chartOptions : null, // chart options
+};
+
+ts.dem.lookupMissingHeights = function() {
+    
+    // Lookup height for whole path where elevation information is lacking
+    // As only looking up for certain parts of path, look for continuous segments
+    // that are lacking elevation information, and store these in a queue
+    // then send request to server to look these up one by one
+    
+    // As elevation requests are asynchronous, need to be careful of the following:
+    // Path changed prior to lookup returning:
+    //      Need to check if next point in pointList still == next point in
+    //      DEM path, if so, use interpolated points as children, otherwise
+    //      discard interpolated points
+    //      BUT NO ACCESS TO NEXT PATH POINT FROM A POINT!!!!
+    //      Store copy of node for refinding first point, then iterate through it
+    // Queue being added to before lookup returns
+    //      Only send one request and wait for it to reutn before sending next
+    //      TODO: Check no active request before sending new one
+    
+    // go through list, find continuous segments with no elevation
+    var segment;
+    
+    var next;
+    for (ts.list.listIterator.reset();  next = ts.list.listIterator.next2d(), !next.done;) {
+        var curLatLng = ts.list.listIterator.curIterPoint;
+        var lastLatLng = ts.list.listIterator.prevIterPoint;
+        if (lastLatLng && (lastLatLng.height == null || curLatLng.height == null)) {
+            // if either end of this pair of latLngs has no height
+            // then need to lookup
+            if (segment===null) {
+                // create a new segment
+                segment = { latLngs : [], firstNode : ts.list.listIterator.curNode};
+                this.segmentQueue.unshift(segment);
+                segment.latLngs.push(lastLatLng);
+            }
+            segment.latLngs.push(curLatLng);
+        } else {
+            // reached a portion of path with elevation set
+            if (segment!==null) segment = null;
+                // prepare for next segment
+        }
+    }
+    
+    this.processSegmentQueue();
+};
+
+ts.pointList.processSegmentQueue = function() {
+    if (this.pendingDEMLookup) return;
+        // currently awaiting a dem lookup to return
+        // don't send another lookup, upon return will lookup next segment in queue
+        // TODO: timeount this?
+    var that = this;
+    if (this.segmentQueue.length>0) {
+        var segment = this.segmentQueue.pop();
+        this.pendingDEMLookup = true;
+        ts.dem.getElevationAlongPath(segment.latLngs, function(results, status) {
+            if (status==nztwlee.demlookup.ElevationStatus.OK) {
+                var next;
+                var curLatLng;
+                try {
+                    for (ts.list.listIterator.reset(segment.firstNode); 
+                        next = ts.list.listIterator.next2d(), !next.done;) {
+                            // reset iterator to first node in segment, then iterate until finding starting point
+                            var latLng = ts.list.listIterator.curIterPoint;
+                            if (ts.latLngEquals(latLng, results[0].location)) {
+                                curLatLng = latLng;
+                                ts.assert (curLatLng.height == null || curLatLng.height == resultLatLng.height);
+                                curLatLng.height = results[0].elevation;
+                                console.log("Found start of path");
+                                break;
+                            }
+                    }
+                    if (curLatLng==null) throw new Error("Could not find start of segment in point list - point list must have changed");
+                    var children = [];
+                    for (var result_i=1; result_i< results.length; result_i++) {
+                        var result = results[result_i];
+                        var resultLatLng = result.location;
+                        resultLatLng.height = result.elevation;
+                        console.log(result_i,resultLatLng.lat(),resultLatLng.lng(),resultLatLng.height,result.pathIndex);
+
+                        if (result.pathIndex==null) {
+                            // invalid index = interpolated point
+                            children.push(resultLatLng); // add to list of children
+                        } else {
+                            next = ts.list.listIterator.next2d();
+                            curLatLng = ts.list.listIterator.curIterPoint;
+                            if (next.done || !ts.latLngEquals(curLatLng,resultLatLng)) {
+                                // did not match expected next path point
+                                throw new Error("Could continue tracting segment in point list - point list must have changed");
+                                break;
+                            }
+                            ts.assert (curLatLng.height == null || curLatLng.height == resultLatLng.height);
+                            curLatLng.height = resultLatLng.height;
+                            ts.list.listIterator.prevIterPoint.children = children;
+                        }
+                        console.log(children);
+                    }
+                } catch(e) {
+                    console.log(e.message);
+                }
+                that.update();
+            } else {
+                ts.warning(lookupStatus.details);
+            }
+            that.pendingDEMLookup = false;
+            that.lookupNextSegmentHeight(); // lookup height of next segment in queue
+        });
+    };
+        
+};
+
+
 
 ts.dem.getElevationAlongPath = function(latLngs, callback) {
         // LocationElevationRequest contains {locations[]: LatLng}
@@ -17,91 +135,72 @@ ts.dem.getElevationAlongPath = function(latLngs, callback) {
     // TODO: If path too long and naive interpolation is performed, does nztwlee dem return original points?
 };
 
-var nzElevationService = new nztwlee.demlookup.ElevationService;
+ts.dem.initializeChart = function() {
+  google.charts.load('current', {packages: ['corechart']});
+  google.charts.setOnLoadCallback(ts.dem.prepareChart);    
+}
 
-function tsLookupDEM(latLng, latLngs, callback) {
-	// latLng = single latLng, latLngs = array
-	// latLng used if not null, else latLngs used
-	// callback:function(tsLookupResult, tsLookupStatus))
-	var pathLookup;
-	
-	if (latLng === null) pathLookup = true;
-	else pathLookup = false;
-	
-	var xhr = new XMLHttpRequest();
-	
-	xhr.ontimeout = function () {
-		//console.log("timeout");
-		callback(null,tsLookupStatus.REQ_TIMEOUT);
-	};
+ts.dem.prepareChart = function() {
+    ts.dem.data = new google.visualization.DataTable();
+    ts.dem.data.addColumn('number', 'distance');
+    ts.dem.data.addColumn('number', 'elevation');
 
-	xhr.onerror = function(e) {
-		//console.log("error");
-		callback(null,tsLookupStatus.REQ_ERROR);
-	};
+    // TODO: width per-distance
+    ts.dem.chartOptions = {
+        fontSize : 13, // set so as to prevent scaling with size
+        //chartArea:{left:100, top:'5%', width:2000, height:'50%',bottom:'35%'}, // with h axis title
+        //hAxis: {
+        //    title: 'distance/km'
+        //},
+        hAxis : { minValue : 0},
+        chartArea:{left:100, top:'5%', width:'100%', height:'50%',bottom:'20%'},
+        width:'100%',
+        height:'100%',
+                vAxis: {
+                title: 'elevation/m'
+                }
+        };
 
-	xhr.onload = function() {
-		//console.log("onload");
-		//console.log(xhr.readyState);
-		//console.log(xhr.status);
-		if (xhr.readyState === 4) { // DONE
-			if (xhr.status === 200) { // SUCCESS
-				var respBuffer = xhr.response;
-				if (!respBuffer) {
-					callback(null,tsLookupStatus.DATA_ERROR);
-				}
-				var respView = new DataView(respBuffer);
-				if (pathLookup) {
-					var parsedData = [];
-					for (var i = 0; i < respBuffer.byteLength; i += 16) {
-			            var lat = respView.getInt32(i)*1.0e-7;
-			            var lng = respView.getInt32(i+4)*1.0e-7;
-			            var q = respView.getInt32(i+8)*1.0e-3;
-			            var index = respView.getInt32(i+12);
-			            var latLng = new google.maps.LatLng(lat,lng);
-			            latLng.height = q;
-			            latLng.index = index;
-			            //console.log(i,lat,lng,q,index);
-			            parsedData.push(latLng);
-					}
-					callback(parsedData,tsLookupStatus.SUCCESS);
-					
-				} else {
-					var q = respView.getInt32(0) * 1.0e-3;
-					callback(q,tsLookupStatus.SUCCESS);
-				}
-			} else {
-				callback(null,tsLookupStatus.REQ_ERROR);
-			}
-		}
-	};
+    ts.dem.chart = new google.visualization.LineChart(document.getElementById('elevationPlot'));
 
-	var url = "http://localhost:9080/process_binary";
+    ts.dem.drawChart();
+}
 
-	xhr.open("POST", url, true);
-	xhr.responseType = "arraybuffer";
-	xhr.timeout = 5000;
-	
-	var reqBuffer; 
-	
-	if (pathLookup) {
-		var numPoints = latLngs.length; 
-		
-		reqBuffer = new ArrayBuffer(numPoints * 8);
-		var reqView = new DataView(reqBuffer);
-		for (var i=0; i< numPoints; i++) {
-			reqView.setInt32(i*8, latLngs[i].lat() * 1.0e7);
-			reqView.setInt32(i*8 + 4, latLngs[i].lng() * 1.0e7);
-			//console.log(i,latLngs[i].lat(),latLngs[i].lng());
-		}
-	} else {
-		reqBuffer = new ArrayBuffer(8);
-		var reqView = new DataView(reqBuffer);
-		reqView.setInt32(0, latLng.lat() * 1.0e7);
-		reqView.setInt32(4, latLng.lng() * 1.0e7);
-	}
+ts.dem.updateChart = function() {
+    var curRows = ts.dem.data.getNumberOfRows();
+    var next;
+    var i = 0;
+    var newData = null;
+    
+    // TODO: add interpolated
+    // TODO: add grade (inst/averaged over 100 m?)
+    for (ts.list.listIterator.reset();  next = ts.list.listIterator.next3d(), !next.done;) {
+        //console.log(next.value);
+        var dist = next.value.cumulLength/1000.0; // convert to km
+        var height = next.value.height;
+        if (height==null) height = 0/0;
+        console.log(dist);
+        console.log(height);
+        if (i<curRows) {
+            ts.dem.data.setCell(i,0,dist);
+            ts.dem.data.setCell(i,1,height);
+        } else {
+            if (newData===null) newData = [];
+            newData.push([dist,height]);
+        }
+        i++;
+    } 
+    if (newData!==null) ts.dem.data.addRows(newData);
+    if (i<curRows) ts.dem.data.removeRows(i,curRows-i);
+    for (i=0;i<ts.dem.data.getNumberOfRows();i++) {
+        console.log(ts.dem.data.getValue(i,0)+", "+ts.dem.data.getValue(i,1))
+    }
+    ts.dem.chartOptions.hAxis.maxValue = dist;
+    ts.dem.drawChart();
+}
 
-	xhr.send(reqBuffer);
+ts.dem.drawChart = function() {
+    ts.dem.chart.draw(ts.dem.data, ts.dem.chartOptions);
 
 }
 

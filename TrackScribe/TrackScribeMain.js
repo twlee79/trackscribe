@@ -37,7 +37,8 @@ ts.main.setCursor = function(cursor) {
 };
 
 ts.main.mapReady = function() {
-	ts.main.elevationPlot = Object.create(tsElevationPlot);
+        ts.dem.initializeChart();
+	//ts.main.elevationPlot = Object.create(tsElevationPlot);
 	//ts.main.elevationPlot.initialize([0,100,230],[10,15,4]);
 	
 };

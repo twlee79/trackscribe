@@ -176,6 +176,8 @@ ts.list.node.pathListenerCallbackFunction = function(index) {
         }
     }
     
+    if (this.marker) this.marker.setPosition(this.getTerminus());
+    
     this.owner.update(); // Note: update will not occur if updates flagged as paused
 };
 
@@ -543,8 +545,11 @@ ts.list.node.update = function(updateLength, updateHeightExtents) {
             for (var j=0; j<curPointLatLng.children.length;j++) {
                 var curChildLatLng = curPointLatLng.children[j];
                 if (updateLength) {
+                    console.log("was "+childCumulLength);
                     childCumulLength+=ts.computeDistBtw(lastChildLatLng, curChildLatLng);
+                    console.log("adding "+ts.computeDistBtw(lastChildLatLng, curChildLatLng));
                     curChildLatLng.cumulLength = childCumulLength; 
+                    console.log("now "+childCumulLength);
                     lastChildLatLng = curChildLatLng;
                 }
                 if (updateHeightExtents && curChildLatLng.height != null) {
@@ -781,7 +786,7 @@ ts.pointList.update = function(updateHeightExtents) {
     this.totalLength = 0;
     if (this.tail) this.totalLength = this.tail.getCumulLength();
     ts.controls.distanceCtrl.update(this.totalLength/1000.0);
-    
+    ts.dem.updateChart();
 };
 
 
@@ -846,9 +851,9 @@ ts.pointList.lookupNextSegmentHeight = function() {
                             var latLng = ts.list.listIterator.curIterPoint;
                             if (ts.latLngEquals(latLng, results[0].location)) {
                                 curLatLng = latLng;
-                                ts.assert (curLatLng.height == null || curLatLng.height == resultLatLng.height);
+                                ts.assert (curLatLng.height == null || curLatLng.height == results[0].elevation);
                                 curLatLng.height = results[0].elevation;
-                                console.log("Found start of path");
+                                //console.log("Found start of path");
                                 break;
                             }
                     }
@@ -874,6 +879,9 @@ ts.pointList.lookupNextSegmentHeight = function() {
                             ts.assert (curLatLng.height == null || curLatLng.height == resultLatLng.height);
                             curLatLng.height = resultLatLng.height;
                             ts.list.listIterator.prevIterPoint.children = children;
+                            ts.list.listIterator.curNode.lengthValid = false; // force node to update children's cumulLengths
+                            children = [];
+                            
                         }
                         console.log(children);
                     }

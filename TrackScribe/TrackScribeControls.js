@@ -240,6 +240,7 @@ ts.controls.heightCtrl.installMapListeners = function () {
     this.owner.mapClickListener = google.maps.event.addListener(ts.main.map, 'click', function (mouseEvent) {
 
         var latLng = mouseEvent.latLng;
+        // TODO fix this!
         nzElevationService.getElevationForLocations({locations:[latLng]}, function (lookupResult, lookupStatus) {
             if (lookupStatus === nztwlee.demlookup.ElevationStatus.OK) {
                 var resultText = lookupResult[0].elevation.toFixed(1) + " m";
