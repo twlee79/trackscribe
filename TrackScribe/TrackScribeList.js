@@ -497,7 +497,7 @@ ts.list.node.update = function(updateLength, updateHeightExtents) {
         // need to track cur and last point cumul length for km markers
     
     if (updateLength) { 
-        ts.assert(this.lengthValid===false);
+        this.lengthValid = false;
         this.clearKmMarkers(); // these will need to be recalculated
     }
     
@@ -781,6 +781,8 @@ ts.pointList.update = function(updateHeightExtents) {
     for (ts.list.listIterator.reset();  next = ts.list.listIterator.listNextNode(), !next.done;) {
         var nextNode = next.value;
         if (!nextNode.lengthValid) updateLength = true;
+        //if (updateLength) nextNode.lengthValid = false; // propagate invalid length downstream
+            // done in update
         nextNode.update(updateLength, updateHeightExtents);
     }
     this.totalLength = 0;
@@ -902,6 +904,7 @@ ts.pointList.lookupNextSegmentHeight = function() {
 /**
  * Convert point list to a CSV string
  */
+
 ts.pointList.toCSV = function() {
     var output = "";
     

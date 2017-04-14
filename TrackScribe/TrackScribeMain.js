@@ -38,33 +38,13 @@ ts.main.setCursor = function(cursor) {
 
 ts.main.mapReady = function() {
         ts.dem.initializeChart();
-	//ts.main.elevationPlot = Object.create(tsElevationPlot);
-	//ts.main.elevationPlot.initialize([0,100,230],[10,15,4]);
-	
 };
 
 ts.main.initialize = function() {
 	ts.main.initializeMap();
 	ts.list.initialize();
 	ts.controls.initialize();
-}
-
-/*
-function testSVG(svg) {
-	//this.elevationSVG = document.getElementById("elevation-svg");
-	testSVG() ;
-	var r = Raphael("elevation");
-	//tsSVG() ;
-	return;
-	
-	var svgns = "http://www.w3.org/2000/svg";
-	var shape = document.createElementNS(svgns, "polygon");
-    shape.setAttributeNS(null, "points", "5,5 45,45 5,45 45,5");
-    shape.setAttributeNS(null, "fill", "none");
-    shape.setAttributeNS(null, "stroke", "black");	
-    ts.main.elevationSVG.appendChild(shape);
-}*/
-
+};
 
 google.maps.event.addDomListener(window, 'load', ts.main.initialize);
 

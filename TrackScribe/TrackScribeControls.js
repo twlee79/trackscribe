@@ -241,29 +241,27 @@ ts.controls.heightCtrl.installMapListeners = function () {
 
         var latLng = mouseEvent.latLng;
         // TODO fix this!
-        nzElevationService.getElevationForLocations({locations:[latLng]}, function (lookupResult, lookupStatus) {
-            if (lookupStatus === nztwlee.demlookup.ElevationStatus.OK) {
-                var resultText = lookupResult[0].elevation.toFixed(1) + " m";
-                if (that.infoWindow === null || that.infoWindow.map === null) {
-                    // no current window (or has been closed)
-                    var infoWindowOptions = {
-                        position: latLng,
-                    };
-                    that.infoWindow = new google.maps.InfoWindow(infoWindowOptions);
-                    that.infoWindow.open(ts.main.map);
-                    that.infoWindow.setContent(resultText);
-                    google.maps.event.addListener(that.infoWindow, 'closeclick', function(event) {
-                        // if closed, invalidate reference
-                        // Note: if Google Maps API opens a new info window, it will
-                        // invalidate this one without calling closeclick
-                        // Seems to be possible to detect this with check for map===null above
-                        that.infoWindow = null;
-                    });
-                } else {
-                    // reposition existing window
-                    that.infoWindow.setContent(resultText);
-                    that.infoWindow.setPosition(latLng);
-                }
+        ts.dem.getElevationAtLocation(latLng, function (lookupResult) {
+            var resultText = lookupResult[0].elevation.toFixed(1) + " m";
+            if (that.infoWindow === null || that.infoWindow.map === null) {
+                // no current window (or has been closed)
+                var infoWindowOptions = {
+                    position: latLng,
+                };
+                that.infoWindow = new google.maps.InfoWindow(infoWindowOptions);
+                that.infoWindow.open(ts.main.map);
+                that.infoWindow.setContent(resultText);
+                google.maps.event.addListener(that.infoWindow, 'closeclick', function(event) {
+                    // if closed, invalidate reference
+                    // Note: if Google Maps API opens a new info window, it will
+                    // invalidate this one without calling closeclick
+                    // Seems to be possible to detect this with check for map===null above
+                    that.infoWindow = null;
+                });
+            } else {
+                // reposition existing window
+                that.infoWindow.setContent(resultText);
+                that.infoWindow.setPosition(latLng);
             }
         });
     });
