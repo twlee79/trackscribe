@@ -32,6 +32,7 @@ ts.list = {}
  */
 ts.list.nodeTypes = {
     PATH:       {value:-11, name: "Path point"}, // not a real node 'type, used for file reading/writing
+    ELEVATION:  {value:-12, name: "Elevation child point"}, // not a real node 'type, used for file reading/writing
     HOME:       {value:  1, name: "Home node", color : ts.colors.homeNode    }, // first node, has a one point path
     MANUAL:     {value: 10, name: "Manual node", color : ts.colors.manualNode    }, // manually draw path
     TOROUTE:    {value: 20, name: "Node to route", color : ts.colors.toRouteNode}, // auto-routed, awaiting route return
@@ -85,16 +86,17 @@ ts.list.node = {
 };
 
 /**
- * Initialize a this node with a type and latLng.
+ * Initialize a this node with a type.
  * Should be called after creating a new node.
+ * Note, after adding to the point list, the first point in path
+ * will be the terminus of last node. Any more points to be added to this node
+ * should be done after it has been added to the point list.
  * 
  * @param {ts.list.nodeTypes} type type of node to initialize
- * @param {LatLng} latLng coordinates of first point in node's path
  */
-ts.list.node.initialize  = function (type, latLng) {
+ts.list.node.initialize  = function (type) {
     ts.assert(this.type === undefined);
     ts.assert(type);
-    ts.assert(latLng instanceof google.maps.LatLng);
     
     // state
     this.deactivateListeners();
@@ -102,7 +104,6 @@ ts.list.node.initialize  = function (type, latLng) {
     // data
     this.type = type;
     this.path = new google.maps.MVCArray();
-    this.path.push(latLng);
     this.addPathListeners();
     this.lengthValid = false;
     
@@ -247,7 +248,7 @@ ts.list.node.setPrevious = function(prevNode) {
     ts.assert(ts.list.node.isPrototypeOf(prevNode));
     
     this.previous = prevNode;
-    this.path.insertAt(0,prevNode.getTerminus());
+    this.path.push(prevNode.getTerminus());
 };
 
 /**
@@ -696,16 +697,18 @@ ts.pointList.addPoint = function(latLng, addType) {
         // first node is 'home' node
         type = ts.list.nodeTypes.HOME;
         node = Object.create(ts.list.node);
-        node.initialize(type, latLng);
+        node.initialize(type);
         this.push(node);
+        node.path.push(latLng);
     } else {
         // yes there are some points
         if (addType==ts.list.nodeTypes.TOROUTE) {
             // are we adding a routed point?
             type = ts.list.nodeTypes.TOROUTE;
             node = Object.create(ts.list.node);
-            node.initialize(type, latLng);
+            node.initialize(type);
             this.push(node);
+            node.path.push(latLng);
             node.autoRoute();
             
         } else if (addType==ts.list.nodeTypes.PATH && this.tail.type == ts.list.nodeTypes.MANUAL) { 
@@ -719,9 +722,9 @@ ts.pointList.addPoint = function(latLng, addType) {
             // no, make a new node
             type = ts.list.nodeTypes.MANUAL;
             node = Object.create(ts.list.node);
-            node.initialize(type, latLng);
+            node.initialize(type);
             this.push(node);
-            
+            node.path.push(latLng);
         }
     }
     
@@ -792,151 +795,55 @@ ts.pointList.update = function(updateHeightExtents) {
 };
 
 
-ts.pointList.lookupHeight = function() {
-    
-    // Lookup height for whole path where elevation information is lacking
-    // As only looking up for certain parts of path, look for continuous segments
-    // that are lacking elevation information, and store these in a queue
-    // then send request to server to look these up one by one
-    
-    // As elevation requests are asynchronous, need to be careful of the following:
-    // Path changed prior to lookup returning:
-    //      Need to check if next point in pointList still == next point in
-    //      DEM path, if so, use interpolated points as children, otherwise
-    //      discard interpolated points
-    //      BUT NO ACCESS TO NEXT PATH POINT FROM A POINT!!!!
-    //      Store copy of node for refinding first point, then iterate through it
-    // Queue being added to before lookup returns
-    //      Only send one request and wait for it to reutn before sending next
-    //      TODO: Check no active request before sending new one
-    
-    // go through list, find continuous segments with no elevation
-    var segment;
-    
-    var next;
-    for (ts.list.listIterator.reset();  next = ts.list.listIterator.next2d(), !next.done;) {
-        var curLatLng = ts.list.listIterator.curIterPoint;
-        var lastLatLng = ts.list.listIterator.prevIterPoint;
-        if (lastLatLng && (lastLatLng.height == null || curLatLng.height == null)) {
-            // if either end of this pair of latLngs has no height
-            // then need to lookup
-            if (segment===null) {
-                // create a new segment
-                segment = { latLngs : [], firstNode : ts.list.listIterator.curNode};
-                this.segmentQueue.unshift(segment);
-                segment.latLngs.push(lastLatLng);
-            }
-            segment.latLngs.push(curLatLng);
-        } else {
-            // reached a portion of path with elevation set
-            if (segment!==null) segment = null;
-                // prepare for next segment
-        }
-    }
-    
-    if (this.pendingDEMLookup) return;
-    this.lookupNextSegmentHeight();
-};
-
-ts.pointList.lookupNextSegmentHeight = function() {
-    var that = this;
-    if (this.segmentQueue.length>0) {
-        var segment = this.segmentQueue.pop();
-        ts.dem.getElevationAlongPath(segment.latLngs, function(results, status) {
-            if (status==nztwlee.demlookup.ElevationStatus.OK) {
-                var next;
-                var curLatLng;
-                try {
-                    for (ts.list.listIterator.reset(segment.firstNode); 
-                        next = ts.list.listIterator.next2d(), !next.done;) {
-                            // reset iterator to first node in segment, then iterate until finding starting point
-                            var latLng = ts.list.listIterator.curIterPoint;
-                            if (ts.latLngEquals(latLng, results[0].location)) {
-                                curLatLng = latLng;
-                                ts.assert (curLatLng.height == null || curLatLng.height == results[0].elevation);
-                                curLatLng.height = results[0].elevation;
-                                //console.log("Found start of path");
-                                break;
-                            }
-                    }
-                    if (curLatLng==null) throw new Error("Could not find start of segment in point list - point list must have changed");
-                    var children = [];
-                    for (var result_i=1; result_i< results.length; result_i++) {
-                        var result = results[result_i];
-                        var resultLatLng = result.location;
-                        resultLatLng.height = result.elevation;
-                        console.log(result_i,resultLatLng.lat(),resultLatLng.lng(),resultLatLng.height,result.pathIndex);
-
-                        if (result.pathIndex==null) {
-                            // invalid index = interpolated point
-                            children.push(resultLatLng); // add to list of children
-                        } else {
-                            next = ts.list.listIterator.next2d();
-                            curLatLng = ts.list.listIterator.curIterPoint;
-                            if (next.done || !ts.latLngEquals(curLatLng,resultLatLng)) {
-                                // did not match expected next path point
-                                throw new Error("Could continue tracting segment in point list - point list must have changed");
-                                break;
-                            }
-                            ts.assert (curLatLng.height == null || curLatLng.height == resultLatLng.height);
-                            curLatLng.height = resultLatLng.height;
-                            ts.list.listIterator.prevIterPoint.children = children;
-                            ts.list.listIterator.curNode.lengthValid = false; // force node to update children's cumulLengths
-                            children = [];
-                            
-                        }
-                        console.log(children);
-                    }
-                } catch(e) {
-                    console.log(e.message);
-                }
-                that.update();
-            } else {
-                ts.warning(lookupStatus.details);
-            }
-            //that.pendingDEMLookup = false;
-        });
-    }
-    
-};
-
-
 /**
  * Convert point list to a CSV string
  */
 
 ts.pointList.toCSV = function() {
     var output = "";
+    var nodeIndex = 0;
+    var pointIndex = 0;
+    var childIndex = 0;
+    var type;
+    output += "index,latitude,longitude,type,distance(m),elevation(m)\n";
     
-    var curNode = this.head;
-    var cumulDist = 0; // cumulative distance of whole track
-    var index = 0; // cumulative index of written points
-    var lastLatLng = null;
-    var type = null;
-    var latLng;
-    
-    output += "#,latitude,longitude,type,dist\n";
-    
-    while (curNode!=null) {
-        if (curNode.path) {
-            for (var i = 0; i < curNode.path.getLength(); i++) {
-                latLng = curNode.path.getAt(i);
-                if (!latLng.equals(lastLatLng)) { // only write unique points, last point of node x and first point of node x+1 are identical
-                    if (!type) type = curNode.type; // first point written for a node is given node's type
-                    else type =  ts.list.nodeTypes.PATH; // subsequent points in node's path are given PATH type
-                    if (lastLatLng) cumulDist += ts.computeDistBtw(lastLatLng, latLng); // calc cumul dist to output
-                    output += index + "," 
-                            + latLng.lat().toFixed(6) + ","
-                            + latLng.lng().toFixed(6) + ","
-                            + ts.list.nodeTypesRev[type.value] +","
-                            + cumulDist.toFixed(1) + "\n";
-                    index += 1;
-                }
-                lastLatLng = latLng;
-            }
+    ts.list.listIterator.reset();
+    var next;
+    while (next = ts.list.listIterator.next3d(true), !next.done) {
+        var nextPoint = next.value;
+        if (ts.list.listIterator.curIterIsChild) {
+            type =  ts.list.nodeTypes.ELEVATION;
+            childIndex++;
         }
-        type = null; // invalidate so loop is aware that next point is first in new node
-        curNode = curNode.next;
+        else {
+            if (!ts.list.listIterator.curNodeIsTerminal &&
+                 ts.list.listIterator.curPointIsTerminal) continue;
+                // don't write terminal points of internal nodes
+                // so only write unique points, last point of node x and first point of node x+1 are identical
+            if (ts.list.listIterator.curPointIsHead) {
+                // first point of new node
+                nodeIndex++;
+                pointIndex = 0;
+                type = ts.list.listIterator.curNode.type; // first point written for a node is given node's type
+            } else {
+                type =  ts.list.nodeTypes.PATH; // subsequent points in node's path are given PATH type
+            }
+            pointIndex++;
+            childIndex = 0;
+        }  
+        var indexStr = nodeIndex+">"+pointIndex;
+        if (childIndex>0) indexStr+=">"+childIndex;
+        
+        var height;
+        if (nextPoint.height && nextPoint.height==nextPoint.height) height = nextPoint.height.toFixed(1);
+        else height = "n/a";
+
+        output += indexStr + "," 
+                + nextPoint.lat().toFixed(6) + ","
+                + nextPoint.lng().toFixed(6) + ","
+                + ts.list.nodeTypesRev[type.value] + ","
+                + nextPoint.cumulLength.toFixed(1) + ","
+                + height + "\n";
     }
     return output;
 };
@@ -948,7 +855,7 @@ ts.pointList.fromCSV = function(csv) {
     this.clear();
     var lines = csv.split("\n");
     var header;
-    var latIndex = null, lngIndex = null, typeIndex = null;
+    var latIndex = null, lngIndex = null, typeIndex = null, elevIndex = null;
     for (var i=0;i<lines.length;i++) {
         var line = lines[i].trim();
         if (line.length>0) {
@@ -964,6 +871,8 @@ ts.pointList.fromCSV = function(csv) {
                         lngIndex = j;
                     } else if (headerToken=="typ") {
                         typeIndex = j;
+                    } else if (headerToken=="ele" || headerToken=="hei") {
+                        elevIndex = j;
                     }
                 }
                 if (!latIndex) {
@@ -980,47 +889,71 @@ ts.pointList.fromCSV = function(csv) {
                 var lat = parseFloat(tokens[latIndex]);
                 var lng = parseFloat(tokens[lngIndex]);
                 var latLng = new google.maps.LatLng(lat,lng);
+                if (elevIndex) {
+                    var elev = parseFloat(tokens[elevIndex]);
+                    if (elev==elev) latLng.height = elev;
+                }
                 var type = null;
                 if (typeIndex) {
                     type = tokens[typeIndex];
                     type = ts.list.nodeTypes[type];
                 } else {
                     // type = null, if no types given in input file
-                    // start with home, then add remaining as path of a single manual node
-                    if (this.isEmpty()) type = ts.list.nodeTypes.HOME;
-                    else if (this.tail.type == ts.list.nodeTypes.HOME) type = ts.list.nodeTypes.MANUAL;
+                    // start with manual, then add remaining as path of a single manual node
+                    if (this.isEmpty()) type = ts.list.nodeTypes.MANUAL;
                     else type = ts.list.nodeTypes.PATH;
                 }
+                console.log("Read "+lat+", "+lng+" type:", type);
                 if (this.isEmpty()) {
-                    if (type != ts.list.nodeTypes.HOME) ts.warning("First point is not HOME type, defaulting to HOME, line: "+line);
-                    type = ts.list.nodeTypes.HOME;
-                } else {
-                    if (type == ts.list.nodeTypes.PATH) {
-                        // adding a point as path of existing node
-                        if (this.tail.type == ts.list.nodeTypes.MANUAL || this.tail.type == ts.list.nodeTypes.ROUTED) {
-                            // expect a supported tail node to add to
-                            this.tail.addPoint(latLng);
-                            latLng = null; // invalidate if already added
-                        } else {
-                            ts.warning("Trying to add point to unsupported node type, adding as node, line: "+line);
-                            this.type = ts.list.nodeTypes.MANUAL;
-                        }
-                    } else if (type == ts.list.nodeTypes.MANUAL || type == ts.list.nodeTypes.ROUTED) {
+                    // first point, add as home
+                    var node = Object.create(ts.list.node);
+                    node.initialize(ts.list.nodeTypes.HOME);
+                    this.push(node);
+                    node.path.push(latLng);
+                    latLng = null; // consume
+                    node.updateOverlays(ts.main.map);
+                    console.log("adding home node");
+                    if (type == ts.list.nodeTypes.MANUAL || type == ts.list.nodeTypes.ROUTED) {
+                        // expect first point to be one of these types
                     } else {
-                        ts.warning("Unknown point type, defaulting to MANUAL:, line: "+line);
-                        type = ts.list.nodeTypes.MANUAL;
+                        ts.warning("Expected first point to be manual or router, adding as manual, line: "+line);
+                        this.type = ts.list.nodeTypes.MANUAL;
                     }
                 }
-                if (latLng) {
-                    // adding a new node
+                if (type == ts.list.nodeTypes.PATH) {
+                    // adding a point as path of existing node
+                    if (this.tail.type == ts.list.nodeTypes.MANUAL || this.tail.type == ts.list.nodeTypes.ROUTED) {
+                        // add to tail node of supported type
+                        this.tail.path.push(latLng);
+                        latLng = null; // consume
+                        console.log("adding point");
+                    } else {
+                        ts.warning("Trying to add point to unsupported node type, adding as node, line: "+line);
+                        this.type = ts.list.nodeTypes.MANUAL;
+                    }
+                } else if (type == ts.list.nodeTypes.ELEVATION) {
+                   var terminus = this.tail.getTerminus();
+                   if (terminus.children==null) terminus.children = [];
+                   terminus.children.push(latLng);
+                   latLng = null; // consume
+                   console.log("adding child");
+               }
+               if (type == ts.list.nodeTypes.MANUAL || type == ts.list.nodeTypes.ROUTED) {
+                    // create new node, first using latLng (if not consumed)
+                    // as terminus of last node
+                    // this will then be set as first point of new node upon
+                    // adding to list
+                    if (latLng!==null) this.tail.path.push(latLng);
                     var node = Object.create(ts.list.node);
-                    node.initialize(type, latLng);
+                    node.initialize(type);
                     this.push(node);
                     node.updateOverlays(ts.main.map);
+                    console.log("adding node");
                 }
             }
         }
     }
+    this.update();
 };
 
 /**
@@ -1076,7 +1009,7 @@ ts.list.listIterator.reset = function(theNode) {
     this.resetPointIterator();
     this.resetChildIterator();
     if (theNode==null) this.nextNode = this.theList.head;
-    else this.nextNode = theNode; // not tested
+    else this.nextNode = theNode; // not exhaustively tested
 };
 
 /**
@@ -1093,6 +1026,12 @@ ts.list.listIterator.listNextNode = function() {
     this.curNode = this.nextNode;
     //console.log("node" + (this.curNode == this.theList.head ? " head" : ""));
     this.nextNode = this.nextNode.next;
+    
+    if (this.curNode == this.theList.head) this.curNodeIsHead = true;
+    else this.curNodeIsHead = false;
+    if (this.nextNode == null) this.curNodeIsTerminal = true;
+    else this.curNodeIsTerminal = false;
+    
     return { value : this.curNode, done : false};
 };
 
@@ -1120,7 +1059,11 @@ ts.list.listIterator.nodeNextPoint = function() {
     
     this.curPoint = this.curNode.path.getAt(this.nextPointIndex);
     //console.log("point" + this.nextPointIndex);
+    if (this.nextPointIndex == 0) this.curPointIsHead = true;
+    else this.curPointIsHead = false;
+    
     this.nextPointIndex += 1;
+    
     if (this.nextPointIndex == this.curNode.path.getLength()) this.curPointIsTerminal = true;
     else this.curPointIsTerminal = false;
     return { value : this.curPoint, done : false };
@@ -1222,7 +1165,7 @@ ts.list.listIterator.next2d = function(all) {
  * Will return (node_x) point_n-1, child0... childn, point_n, 
  * (node_x+1) point0, child0... childn, point1,child0... childn, point2...
  * 
- * Return next child of current point as {done: false, value : chi;d}
+ * Return next child of current point as {done: false, value : child}
  * or {done : true} if no more children.
  * @returns
  */
@@ -1310,6 +1253,26 @@ function testIterator() {
     }
 }
 */
+
+ts.list.toConsole = function() {
+    ts.list.listIterator.reset();
+    console.log("Iterating all points...");
+    var i = 0;
+    var next;
+    var nodeIndex = -1;
+    while (next = ts.list.listIterator.next3d(true), !next.done) {
+        var nextPoint = next.value;
+        if (ts.list.listIterator.curPointIsHead) {
+            // new node
+            nodeIndex+=1;
+        }
+        console.log("iteration "+i+": node "+nodeIndex+" (type: "+ts.list.nodeTypesRev[ts.list.listIterator.curNode.type.value]+
+                    ") point "+ (ts.list.listIterator.nextPointIndex-1)+" child "+(ts.list.listIterator.nextChildIndex-1));
+        console.log(nextPoint);
+        console.log("lat: "+nextPoint.lat()+", lng: "+nextPoint.lng()+", dist: "+nextPoint.cumulLength+", height: "+nextPoint.height);
+        i++;
+    }
+}
 
 /**
  * Class for iterating through a single node of list.

@@ -228,7 +228,7 @@ ts.controls.heightCtrl.activate = function () {
     var lastControl = this.owner.activeControl;
     if (lastControl == this) {
         // second click on height = lookup all points
-        ts.pointList.lookupHeight();
+        ts.dem.lookupMissingHeights();
     }
     ts.control.activate.call(this);
 };
