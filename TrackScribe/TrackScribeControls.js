@@ -1,3 +1,22 @@
+/*
+ * Copyright (C) 2013-2017 Tet Woo Lee
+ * 
+ * This file is part of TrackScribe.
+ * 
+ * TrackScribe is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * TrackScribe is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * For a copy of the GNU General Public License is provided, please
+ * see the LICENSE file or <http://www.gnu.org/licenses/>.
+ */
+
 "use strict";
 
 // TODO: Move style data out of HTML file
@@ -393,7 +412,7 @@ ts.controls.infoCtrl.elevationInfo = "";
 ts.controls.infoCtrl.elevationStatus = "";
 
 ts.controls.infoCtrl.update = function() {
-  this.setHTML(this.routingInfo+"<BR>"+this.elevationStatus+" "+this.elevationInfo);  
+  this.setHTML("<span style=\"font-weight:bold\">"+ts.titleString+".</span> "+this.routingInfo+". "+this.elevationStatus+" "+this.elevationInfo);  
   ts.controls.elevationStatusCtrl.setHTML(this.elevationStatus);
 };
 
@@ -463,6 +482,7 @@ ts.controls.initialize = function () {
     ts.controls.drawControls.addControl("tips", ts.controls.tipsCtrl, false);
     ts.controls.drawControls.addControl("info", ts.controls.infoCtrl, false);
     ts.controls.drawControls.addControl("elevationStatus", ts.controls.elevationStatusCtrl, false);
+    ts.controls.infoCtrl.update();
 
 
     ts.controls.drawControls.controls[1].activate();

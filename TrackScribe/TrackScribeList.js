@@ -1,3 +1,22 @@
+/*
+ * Copyright (C) 2013-2017 Tet Woo Lee
+ * 
+ * This file is part of TrackScribe.
+ * 
+ * TrackScribe is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ * 
+ * TrackScribe is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * For a copy of the GNU General Public License is provided, please
+ * see the LICENSE file or <http://www.gnu.org/licenses/>.
+ */
+
 "use strict";
 
 var ts = ts || {};
@@ -178,7 +197,6 @@ ts.list.node.pathListenerCallbackFunction = function(index, element) {
         if (prevLatLng.children!=null) {
             prevLatLng.children = null;
             prevLatLng.height = null; // invalidate to force relookup and non-plotting
-            prevLatLng.heightValid = false; // true if heights of this point and to next is valid
         }
     }
     
@@ -520,12 +538,11 @@ ts.list.node.updateOverlays = function() {
  * Update/recalculate various parameters of this node.
  * 
  * @param {boolean} updateLength If true, will update lengths of this node and its points.
- * @param {boolean} updateHeightExtents If true, will update owner's height extents based on height
  * of node points and their children. 
  * 
  */
-ts.list.node.update = function(updateLength, updateHeightExtents) {
-    if (!updateLength && !updateHeightExtents) return; // nothing to do
+ts.list.node.update = function(updateLength) {
+    if (!updateLength) return; // nothing to do
     
     var markerEvery = 1000.0; // metres
     
@@ -574,10 +591,6 @@ ts.list.node.update = function(updateLength, updateHeightExtents) {
             }
         }
 
-        if (updateHeightExtents && curPointLatLng.height != null) {
-            this.owner.updateHeightExtents(curPointLatLng.height);
-        }
-
         // update any children of curPoint
         if (curPointLatLng.children) {
             var lastChildLatLng = curPointLatLng;
@@ -591,9 +604,6 @@ ts.list.node.update = function(updateLength, updateHeightExtents) {
                     curChildLatLng.cumulLength = childCumulLength; 
                     //console.log("now "+childCumulLength);
                     lastChildLatLng = curChildLatLng;
-                }
-                if (updateHeightExtents && curChildLatLng.height != null) {
-                    this.owner.updateHeightExtents(curChildLatLng.height);
                 }
             }
         }
@@ -744,63 +754,6 @@ ts.pointList.clear = function() {
     while (this.head) ts.pointList.deleteLastNode();    
 };
 
-/**
- * 
- */
-ts.pointList.resetHeightExtents = function() {
-    this.minHeight = +Infinity;
-    this.maxHeight = -Infinity;
-    this.heightsTentative = false;
-};
-
-/**
- * Use height parameter to update height extents of this list
- * 
- */
-ts.pointList.updateHeightExtents = function(height) {
-    if (height != null) { 
-        if (height<this.minHeight) this.minHeight = height; 
-        if (height>this.maxHeight) this.maxHeight = height;
-    } else {
-        this.heightsTentative = true;
-    }
-        
-};
-
-ts.pointList.getMaxDist = function() {
-    return this.tail ? Math.max(this.tail.getCumulLength(),1000.0) : 0.0;
-};
-
-ts.pointList.getExtent = function() {
-    //this.head.calculateLength(); // recalc. all lengths, REMOVE to more efficient
-    var curNode = this.head;
-    var minHeight = +Infinity;
-    var maxHeight = -Infinity;
-    
-    while (curNode!=null) {
-        for (var i = 0; i < curNode.path.getLength(); i++) {
-            var latLng = curNode.path.getAt(i);
-            if (latLng.height<minHeight) minHeight = latLng.height; 
-            if (latLng.height>maxHeight) maxHeight = latLng.height;
-            if (latLng.children) for (var j = 0; j < latLng.children.length; j++) {
-                var childLatLng = latLng.children[j];
-                if (childLatLng.height<minHeight) minHeight = childLatLng.height;
-                if (childLatLng.height>maxHeight) maxHeight = childLatLng.height;
-            }
-        }
-        curNode = curNode.next;
-    }
-    var minDist = 0.0;
-    var maxDist = this.getMaxDist();
-    return {
-        minDist : minDist,
-        maxDist : maxDist,
-        minHeight : minHeight,
-        maxHeight : maxHeight
-    };
-    
-};
-
 ts.pointList.isEmpty = function() {
     return this.head==null;    
 };
@@ -932,15 +885,10 @@ ts.pointList.resumeUpdate = function()  {
 
 
 /**
- * Update/recalculate length and height extents of this list
- * by calling update of each node.
+ * Update/recalculate length of this list by calling update of each node.
  * 
- * @param updateHeightExtents
- * If true, will update owner's height extents based on height
- * of node points and their children, otherwise height extent
- * is not updated
  */
-ts.pointList.update = function(updateHeightExtents) {
+ts.pointList.update = function() {
     if (!this.updateActive) return;
     var next;
     var updateLength = false;
@@ -949,7 +897,7 @@ ts.pointList.update = function(updateHeightExtents) {
         if (!nextNode.lengthValid) updateLength = true;
         //if (updateLength) nextNode.lengthValid = false; // propagate invalid length downstream
             // done in update
-        nextNode.update(updateLength, updateHeightExtents);
+        nextNode.update(updateLength);
     }
     this.totalLength = 0;
     if (this.tail) this.totalLength = this.tail.getCumulLength();
