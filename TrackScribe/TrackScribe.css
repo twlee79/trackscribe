@@ -32,6 +32,16 @@
 	padding-bottom: 0.5ex;
 	padding-left: 0.5em;	
 }
+.optionsPaddingOnly
+{
+	margin-left: 0px;
+	margin-right: 0px;
+	padding-right: 0.5em;
+	padding-top: 0.0ex;
+	padding-bottom: 0.0ex;
+	padding-left: 0.5em;	
+}
+
 .controlElement
 {
 	min-width: 3em;

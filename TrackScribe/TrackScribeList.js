@@ -420,7 +420,7 @@ ts.list.node.autoRoute = function() {
         origin : this.path.getAt(0),
         destination : this.path.getAt(1),
         provideRouteAlternatives : false,
-        travelMode : google.maps.TravelMode.WALKING // TODO: allow changing travel modes
+        travelMode : google.maps.TravelMode[ts.controls.travelModeOption.getValue()]
     };
     var that = this;
     ts.main.directionsService.route(request, function(response, status) {
@@ -455,7 +455,7 @@ ts.list.node.autoRoute = function() {
                 };
                 
             }
-            ts.controls.infoCtrl.setHTML (theRoute.warnings+"<BR>"+theRoute.copyrights);
+            ts.controls.infoCtrl.updateRoutingInfo(theRoute.warnings+" "+theRoute.copyrights);
             
             if (that.next) that.next.path.setAt(0,that.getTerminus()); // ensure this node and next share terminus/first points
             that.type = ts.list.nodeTypes.ROUTED;

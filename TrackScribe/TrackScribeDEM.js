@@ -64,7 +64,7 @@ ts.dem.processSegmentQueue = function() {
     if (this.segmentQueue.length>0) {
         var segment = this.segmentQueue.pop();
         this.pendingDEMLookup = true;
-        ts.controls.elevationStatusCtrl.setHTML("Elevation lookup in progress...");
+        ts.controls.infoCtrl.updateElevationStatus("Elevation lookup in progress...");
         ts.dem.getElevationAlongPath(segment.latLngs, function(results, status) {
             if (status==nztwlee.demlookup.ElevationStatus.OK) {
                 var next;
@@ -115,11 +115,12 @@ ts.dem.processSegmentQueue = function() {
                 }
                 ts.pointList.update();
             } else {
-                ts.controls.elevationStatusCtrl.setHTML("Elevation lookup error:"+lookupStaatus.details);
+                ts.controls.infoCtrl.updateElevationStatus("Elevation lookup error:"+lookupStaatus.details);
                 ts.warning(lookupStatus.details);
             }
             that.pendingDEMLookup = false;
-            ts.controls.elevationStatusCtrl.setHTML("");
+            ts.controls.infoCtrl.updateElevationStatus("");
+            ts.controls.infoCtrl.updateElevationInfo("Elevation source: Interpolated NZ TopoMaps from NZLookDEMUp Google AppEngine Server");
             that.processSegmentQueue(); // lookup height of next segment in queue
         });
     };

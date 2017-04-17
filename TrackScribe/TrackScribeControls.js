@@ -1,5 +1,7 @@
 "use strict";
 
+// TODO: Move style data out of HTML file
+
 var ts = ts || {};
 
 ts.controls = {};
@@ -73,6 +75,8 @@ ts.controlContainer.addControl = function (id, Type, allowActivation) {
 };
 
 ts.controls.drawControls = Object.create(ts.controlContainer);
+
+ts.controls.options = Object.create(ts.controlContainer);
 
 ts.controls.statusBar = Object.create(ts.controlContainer);
 
@@ -200,6 +204,15 @@ ts.control.activate = function () {
     this.installMapListeners();
 
     this.setActiveSyle(true);
+};
+
+// TODO: Perhaps elaborate an options class
+ts.option = Object.create(ts.htmlElement);
+
+ts.controls.travelModeOption = Object.create(ts.option);
+
+ts.controls.travelModeOption.getValue = function() {
+    return this.theControl.options[this.theControl.selectedIndex].value;   
 };
 
 ts.controls.dragCtrl = Object.create(ts.control);
@@ -375,6 +388,30 @@ ts.controls.distanceCtrl.update = function (distance) {
 ts.controls.tipsCtrl = Object.create(ts.controls.statusCtrl);
 ts.controls.infoCtrl = Object.create(ts.controls.statusCtrl);
 
+ts.controls.infoCtrl.routingInfo = "";
+ts.controls.infoCtrl.elevationInfo = "";
+ts.controls.infoCtrl.elevationStatus = "";
+
+ts.controls.infoCtrl.update = function() {
+  this.setHTML(this.routingInfo+"<BR>"+this.elevationStatus+" "+this.elevationInfo);  
+  ts.controls.elevationStatusCtrl.setHTML(this.elevationStatus);
+};
+
+ts.controls.infoCtrl.updateRoutingInfo = function(newRoutingInfo) {
+  this.routingInfo = newRoutingInfo;
+  this.update();
+};
+
+ts.controls.infoCtrl.updateElevationInfo = function(newElevationInfo) {
+  this.elevationInfo = newElevationInfo;
+  this.update();
+};
+
+ts.controls.infoCtrl.updateElevationStatus = function(newElevationStatus) {
+  this.elevationStatus = newElevationStatus;
+  this.update();
+};
+
 ts.controls.elevationStatusCtrl = Object.create(ts.controls.statusCtrl);
 
 ts.controls.saveToolClick = function () {
@@ -416,6 +453,10 @@ ts.controls.initialize = function () {
     document.getElementById('inputCSV').addEventListener("change", ts.controls.loadToolFileSelected); // called when a file is selected
 
     document.getElementById("saveToolButton").addEventListener("click", ts.controls.saveToolClick);
+    
+    ts.controls.options.initialize("optionsPalette", google.maps.ControlPosition.LEFT_TOP);
+    ts.controls.travelModeOption.initialize("travelmode");
+
 
     ts.controls.statusBar.initialize("statusBar", google.maps.ControlPosition.BOTTOM);
     ts.controls.drawControls.addControl("distance", ts.controls.distanceCtrl, false);
