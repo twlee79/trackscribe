@@ -249,9 +249,9 @@ ts.controls.manualNodeCtrl.nodeClickFunction = function(node, mouseEvent) {
 };
 
 ts.controls.manualNodeCtrl.polylineClickFunction = function(node, polyMouseEvent) {
-    console.log("Change to manual");
-    console.log(node);
-    console.log(polyMouseEvent);
+    //console.log("Change to manual");
+    //console.log(node);
+    //console.log(polyMouseEvent);
     if (polyMouseEvent.vertex != null) node.bisectNode(polyMouseEvent.vertex);
     //node.changeType(ts.list.nodeTypes.MANUAL);
 };
@@ -283,16 +283,20 @@ ts.controls.deleteNodeCtrl = Object.create(ts.control);
 
 // TODO: probably should not delete whole section of a manual node
 ts.controls.deleteNodeCtrl.nodeClickFunction = function(node, mouseEvent) {
-    console.log("Delete");
-    console.log(node);
-    console.log(mouseEvent);
+    //console.log("Delete");
+    //console.log(node);
+    //console.log(mouseEvent);
+    if (node.type === ts.list.nodeTypes.MANUAL) {
+        node.deleteVertex(null);
+        return;
+    }
     ts.pointList.deleteNode(node);
 }
 
 ts.controls.deleteNodeCtrl.polylineClickFunction = function(node, polyMouseEvent) {
-    console.log("Delete");
-    console.log(node);
-    console.log(polyMouseEvent);
+    //console.log("Delete");
+    //console.log(node);
+    //console.log(polyMouseEvent);
     if (polyMouseEvent.vertex != null) node.deleteVertex(polyMouseEvent.vertex);
     //node.changeType(ts.list.nodeTypes.MANUAL);
 };
@@ -301,8 +305,8 @@ ts.controls.deleteNodeCtrl.activate = function () {
     ts.main.setCursor('default');
     var lastControl = this.owner.activeControl;
     if (lastControl == this) {
-        // sdecond click on delete control = delete last node
-        ts.pointList.deleteLastNode();
+        // sdecond click on delete control = simulate clock on last node
+        this.nodeClickFunction(ts.pointList.tail);
     }
     ts.control.activate.call(this);
 };

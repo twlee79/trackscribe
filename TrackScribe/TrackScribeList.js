@@ -182,6 +182,13 @@ ts.list.node.pathListenerCallbackFunction = function(index, element) {
         }
     }
     
+    if (index>=this.path.getLength()-1) {
+        // either changing terminus, or deleted previous terminus
+        if (this.next) {
+            this.next.path.setAt(0,this.getTerminus());
+        }
+    }
+    
     if (this.marker) this.marker.setPosition(this.getTerminus());
     
     this.owner.update(); // Note: update will not occur if updates flagged as paused
@@ -615,6 +622,7 @@ ts.list.node.changeType = function(type) {
 }
 
 ts.list.node.deleteVertex = function(pointIndex) {
+    if (pointIndex==null) pointIndex = this.path.getLength()-1; // delete last vertex
     this.path.removeAt(pointIndex);
 };
 
