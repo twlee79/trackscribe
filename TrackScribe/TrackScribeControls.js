@@ -77,6 +77,22 @@ ts.controls.drawControls = Object.create(ts.controlContainer);
 ts.controls.statusBar = Object.create(ts.controlContainer);
 
 /**
+ * Call node click function.
+ * 
+ * @param {type} node
+ * @returns {undefined}
+ */
+ts.controls.callNodeClickFunction = function (node) {
+    if (ts.controls.theNodeClickFunction!==null) ts.controls.theNodeClickFunction(node);
+};
+
+/**
+ * Function called when a node's marker is clicked.
+ */
+ts.controls.theNodeClickFunction = null;
+
+
+/**
  * tsControl inherits from ts.htmlElement, used to encapsulate a control.
  *
  * Members:
@@ -87,6 +103,7 @@ ts.controls.statusBar = Object.create(ts.controlContainer);
 ts.control = Object.create(ts.htmlElement);
 ts.control.owner = null;
 ts.control.allowActivation = false;
+ts.control.nodeClickFunction = null;
 
 /**
  * Initializes this tsControl, overrides (but calls) function in parent.
@@ -159,6 +176,8 @@ ts.control.activate = function () {
         google.maps.event.removeListener(this.owner.mapClickListener);
         this.owner.mapClickListener = null;
     }
+    
+    ts.controls.theNodeClickFunction = this.nodeClickFunction;
 
     this.installMapListeners();
 
@@ -208,7 +227,12 @@ ts.controls.routeCtrl.installMapListeners = function () {
 };
 
 ts.controls.deleteNodeCtrl = Object.create(ts.control);
-// T-ODO add delete selected node (listener)
+
+// TODO: delete node with this callback
+ts.controls.deleteNodeCtrl.nodeClickFunction = function(node) {
+    console.log("Please delete"+node);
+    ts.pointList.deleteNode(node);
+}
 
 ts.controls.deleteNodeCtrl.activate = function () {
     ts.main.setCursor('default');
@@ -240,7 +264,6 @@ ts.controls.heightCtrl.installMapListeners = function () {
     this.owner.mapClickListener = google.maps.event.addListener(ts.main.map, 'click', function (mouseEvent) {
 
         var latLng = mouseEvent.latLng;
-        // TODO fix this!
         ts.dem.getElevationAtLocation(latLng, function (lookupResult) {
             var resultText = lookupResult[0].elevation.toFixed(1) + " m";
             if (that.infoWindow === null || that.infoWindow.map === null) {
@@ -284,6 +307,8 @@ ts.controls.distanceCtrl.update = function (distance) {
 
 ts.controls.tipsCtrl = Object.create(ts.controls.statusCtrl);
 ts.controls.infoCtrl = Object.create(ts.controls.statusCtrl);
+
+ts.controls.elevationStatusCtrl = Object.create(ts.controls.statusCtrl);
 
 ts.controls.saveToolClick = function () {
     if (ts.pointList.isEmpty()) {
@@ -329,6 +354,7 @@ ts.controls.initialize = function () {
     ts.controls.drawControls.addControl("distance", ts.controls.distanceCtrl, false);
     ts.controls.drawControls.addControl("tips", ts.controls.tipsCtrl, false);
     ts.controls.drawControls.addControl("info", ts.controls.infoCtrl, false);
+    ts.controls.drawControls.addControl("elevationStatus", ts.controls.elevationStatusCtrl, false);
 
 
     ts.controls.drawControls.controls[1].activate();

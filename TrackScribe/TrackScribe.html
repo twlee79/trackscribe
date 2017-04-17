@@ -68,7 +68,7 @@ body {
 				<img src="deletenode.png" class="controlButton" alt="Delete tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="heightTool"
-				title="Lookup height of current location">
+				title="Lookup height of current location. Double-click to lookup elevation of path.">
 				<img src="height.png" class="controlButton" alt="Height tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="loadTool" style="padding:0ex;"
@@ -84,6 +84,10 @@ body {
                                     <img class="controlPaddingOnly controlButton" src="savetrack.png" alt="Save file tool">
                                 </button>
 			</div>
+            <div id="options" class="controlElement controlElementBasic" >
+                <input type="radio" name="TravelMode" value="walking">Walking
+                <input type="radio" name="TravelMode" value="cycling">Cycling
+            </div>
                 </div>
 	</div>
 	
@@ -91,14 +95,10 @@ body {
 		<div class="controlContainerHorizontal" id="statusBar" style="width:90%; padding-bottom: 3.5ex; cursor: crosshair;">
 			<div id="elevationContainer" class="controlElement controlElementBasic" 
 				style="height: 20ex; overflow-y: scroll; overflow-x: scroll;">
-				<div id="elevationPlot" style="position: absolute; width: 95%; height: 95%;">
+				<div id="elevationInnerContainer" style="position: absolute; width: 95%; height: 95%;">
+                                <div id="elevationStatus" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0;  z-index: 10;"></div>
+                                <div id="elevationPlot" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0;"></div>
 				</div>
-				<!--
-				<svg id="elevation-svg" xmlns="http://www.w3.org/2000/svg"
-				     xmlns:xlink="http://www.w3.org/1999/xlink"
-				     onload="tsSVGLoad(event)">
-			    </svg>
-			    -->
  			</div>
 			<div id="distance" class="controlElement controlElementBasic controlSideBySide" 
 				style="width:10%; min-width:6em; font-weight:bold; font-size:150%; ">
@@ -114,6 +114,9 @@ body {
 			</div>
 		</div>
 	</div>
+        
+	<div id="dummyDiv3" style="display:none">
+        </div>
 	
 	<div class="controlElement controlElementActive" id="dummyActiveElement" style="display:none"></div>
 </body>

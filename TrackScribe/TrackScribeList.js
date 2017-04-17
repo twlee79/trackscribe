@@ -91,6 +91,7 @@ ts.list.node = {
  * Note, after adding to the point list, the first point in path
  * will be the terminus of last node. Any more points to be added to this node
  * should be done after it has been added to the point list.
+ * Activate listeners should be called after node creation is complete.
  * 
  * @param {ts.list.nodeTypes} type type of node to initialize
  */
@@ -160,6 +161,7 @@ ts.list.node.activateListeners = function()  {
  */
 ts.list.node.pathListenerCallbackFunction = function(index) {
     ts.assert(index==null || typeof(index)==='number');
+    console.log("callback"+index);
     if (index!=null) ts.assert(this.path.getAt(index).children == null); 
         // this checks that the point at index is already invalid
     
@@ -215,6 +217,9 @@ ts.list.node.addMarkerListeners = function() {
         var latLng = mouseEvent.latLng;
         that.updateTerminus(latLng);
         });
+    google.maps.event.addListener(this.marker, 'click', function(mouseEvent) {
+        ts.controls.callNodeClickFunction(that);
+        });        
 };
 
 /**
@@ -246,9 +251,17 @@ ts.list.node.clearPath = function() {
  */
 ts.list.node.setPrevious = function(prevNode) {
     ts.assert(ts.list.node.isPrototypeOf(prevNode));
-    
-    this.previous = prevNode;
-    this.path.push(prevNode.getTerminus());
+    if (this.previous!==null) {
+        // changing previous rather than adding a new one
+        this.previous = prevNode;
+        prevNode.getTerminus().height = null;
+        prevNode.getTerminus().children = null; // invalidate previous point
+        this.path.setAt(0,prevNode.getTerminus());
+    } else {
+        ts.assert(this.path.getLength()===0);
+        this.previous = prevNode;
+        this.path.push(prevNode.getTerminus());
+    }
 };
 
 /**
@@ -368,6 +381,7 @@ ts.list.node.reroute = function() {
         this.path.clear();
         this.path.push(origin);
         this.path.push(terminus);
+        this.lengthValid = false;
         this.autoRoute();
         this.updateOverlays(); 
         this.activateListeners();
@@ -401,6 +415,7 @@ ts.list.node.autoRoute = function() {
                 // listeners unneeded, affected points should already have
                 // been flagged/invalidated, and all points to be added are
                 // new objects
+            that.lengthValid = false;
             var origin = that.path.getAt(0);
             that.path.clear();
             var theRoute = response.routes[0];
@@ -422,9 +437,11 @@ ts.list.node.autoRoute = function() {
             }
             ts.controls.infoCtrl.setHTML (theRoute.warnings+"<BR>"+theRoute.copyrights);
             
+            if (that.next) that.next.path.setAt(0,that.getTerminus()); // ensure this node and next share terminus/first points
             that.type = ts.list.nodeTypes.ROUTED;
             that.updateOverlays(ts.main.map);
             that.activateListeners(); // flags
+            
         };
     });
 };
@@ -487,7 +504,6 @@ ts.list.node.updateOverlays = function() {
  * 
  */
 ts.list.node.update = function(updateLength, updateHeightExtents) {
-
     if (!updateLength && !updateHeightExtents) return; // nothing to do
     
     var markerEvery = 1000.0; // metres
@@ -508,11 +524,13 @@ ts.list.node.update = function(updateLength, updateHeightExtents) {
         var curPointLatLng = this.path.getAt(i);
         
         if (updateLength) {
+            console.log("Point "+i+" was "+curPointCumulLength);
             if (lastPointLatLng) {
                 // find length from previous, add to cumul total for path
                 curPointCumulLength += ts.computeDistBtw(lastPointLatLng, curPointLatLng);
             }
             curPointLatLng.cumulLength = curPointCumulLength;
+            console.log("is now "+curPointCumulLength);
             
             var lastFloorKm = Math.floor(lastPointCumulLength/markerEvery);
             var curFloorKm = Math.floor(curPointCumulLength/markerEvery);
@@ -546,11 +564,11 @@ ts.list.node.update = function(updateLength, updateHeightExtents) {
             for (var j=0; j<curPointLatLng.children.length;j++) {
                 var curChildLatLng = curPointLatLng.children[j];
                 if (updateLength) {
-                    console.log("was "+childCumulLength);
+                    //console.log("was "+childCumulLength);
                     childCumulLength+=ts.computeDistBtw(lastChildLatLng, curChildLatLng);
-                    console.log("adding "+ts.computeDistBtw(lastChildLatLng, curChildLatLng));
+                    //console.log("adding "+ts.computeDistBtw(lastChildLatLng, curChildLatLng));
                     curChildLatLng.cumulLength = childCumulLength; 
-                    console.log("now "+childCumulLength);
+                    //console.log("now "+childCumulLength);
                     lastChildLatLng = curChildLatLng;
                 }
                 if (updateHeightExtents && curChildLatLng.height != null) {
@@ -685,6 +703,30 @@ ts.pointList.deleteLastNode = function() {
             this.head = null;
         }
     }
+    this.resumeUpdate();
+};
+
+/**
+ * Remove last node
+ * @param node
+ */
+ts.pointList.deleteNode = function(node) {
+    if (node===this.tail) {
+        this.deleteLastNode();
+        return;
+    }
+    if (node==this.head) {
+        // ug special handling if deleting home node
+        window.alert("Deleting home node not implemented, please drag it instead.");
+        return;
+    }
+    this.pauseUpdate();
+    node.previous.next = node.next;
+    node.next.setPrevious(node.previous);
+    node.next.lengthValid = false;
+    node.previous.reroute();
+    node.next.reroute();
+    node.clear();
     this.resumeUpdate();
 };
 
@@ -852,6 +894,7 @@ ts.pointList.toCSV = function() {
  * Convert CSV string to point list
  */
 ts.pointList.fromCSV = function(csv) {
+    this.pauseUpdate();
     this.clear();
     var lines = csv.split("\n");
     var header;
@@ -944,6 +987,7 @@ ts.pointList.fromCSV = function(csv) {
                     // this will then be set as first point of new node upon
                     // adding to list
                     if (latLng!==null) this.tail.path.push(latLng);
+                    this.tail.activateListeners(); // last node is complete, activate listeners
                     var node = Object.create(ts.list.node);
                     node.initialize(type);
                     this.push(node);
@@ -953,7 +997,8 @@ ts.pointList.fromCSV = function(csv) {
             }
         }
     }
-    this.update();
+    this.tail.activateListeners();
+    this.resumeUpdate();
 };
 
 /**

@@ -63,7 +63,8 @@ ts.dem.processSegmentQueue = function() {
     var that = this;
     if (this.segmentQueue.length>0) {
         var segment = this.segmentQueue.pop();
-		this.pendingDEMLookup = true;
+        this.pendingDEMLookup = true;
+        ts.controls.elevationStatusCtrl.setHTML("Elevation lookup in progress...");
         ts.dem.getElevationAlongPath(segment.latLngs, function(results, status) {
             if (status==nztwlee.demlookup.ElevationStatus.OK) {
                 var next;
@@ -75,7 +76,7 @@ ts.dem.processSegmentQueue = function() {
                             var latLng = ts.list.listIterator.curIterPoint;
                             if (ts.latLngEquals(latLng, results[0].location)) {
                                 curLatLng = latLng;
-                                ts.assert (curLatLng.height == null || curLatLng.height == results[0].elevation);
+                                ts.assert (curLatLng.height == null || Math.abs(curLatLng.height - results[0].elevation)<0.1);
                                 curLatLng.height = results[0].elevation;
                                 //console.log("Found start of path");
                                 break;
@@ -114,9 +115,11 @@ ts.dem.processSegmentQueue = function() {
                 }
                 ts.pointList.update();
             } else {
+                ts.controls.elevationStatusCtrl.setHTML("Elevation lookup error:"+lookupStaatus.details);
                 ts.warning(lookupStatus.details);
             }
             that.pendingDEMLookup = false;
+            ts.controls.elevationStatusCtrl.setHTML("");
             that.processSegmentQueue(); // lookup height of next segment in queue
         });
     };
