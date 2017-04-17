@@ -80,10 +80,21 @@ ts.controls.statusBar = Object.create(ts.controlContainer);
  * Call node click function.
  * 
  * @param {type} node
+ * @param {type} mouseEvent
  * @returns {undefined}
  */
-ts.controls.callNodeClickFunction = function (node) {
-    if (ts.controls.theNodeClickFunction!==null) ts.controls.theNodeClickFunction(node);
+ts.controls.callNodeClickFunction = function (node, mouseEvent) {
+    if (ts.controls.theNodeClickFunction!==null) ts.controls.theNodeClickFunction(node, mouseEvent);
+};
+
+/**
+ * 
+ * @param {type} node
+ * @param {type} polyMouseEvent
+ * @returns {undefined}
+ */
+ts.controls.callPolylineClickFunction = function (node, polyMouseEvent) {
+    if (ts.controls.thePolylineClickFunction!==null) ts.controls.thePolylineClickFunction(node, polyMouseEvent);
 };
 
 /**
@@ -91,6 +102,10 @@ ts.controls.callNodeClickFunction = function (node) {
  */
 ts.controls.theNodeClickFunction = null;
 
+/**
+ * Function called when a polyline's marker is clicked.
+ */
+ts.controls.thePolylineClickFunction = null;
 
 /**
  * tsControl inherits from ts.htmlElement, used to encapsulate a control.
@@ -104,6 +119,7 @@ ts.control = Object.create(ts.htmlElement);
 ts.control.owner = null;
 ts.control.allowActivation = false;
 ts.control.nodeClickFunction = null;
+ts.control.polylineClickFunction = null;
 
 /**
  * Initializes this tsControl, overrides (but calls) function in parent.
@@ -178,6 +194,8 @@ ts.control.activate = function () {
     }
     
     ts.controls.theNodeClickFunction = this.nodeClickFunction;
+    
+    ts.controls.thePolylineClickFunction = this.polylineClickFunction;
 
     this.installMapListeners();
 
@@ -201,6 +219,16 @@ ts.controls.manualPointCtrl.installMapListeners = function () {
     });
 };
 
+ts.controls.manualPointCtrl.nodeClickFunction = function(node, mouseEvent) {
+    //console.log("Change to manual point");
+    //console.log(node);
+    if (node.next==null) return;
+    if (node.type == ts.list.nodeTypes.ROUTED || node.next.type == ts.list.nodeTypes.ROUTED )
+        if (!window.confirm("Combining manual and routed sections will trigger auto-routing of new combined section, continue?")) {
+            return;
+        }
+    node.combineWithNext();
+};
 
 ts.controls.manualNodeCtrl = Object.create(ts.control);
 
@@ -212,6 +240,20 @@ ts.controls.manualNodeCtrl.installMapListeners = function () {
         var latLng = mouseEvent.latLng;
         ts.pointList.addManualPoint(latLng, true);
     });
+};
+
+ts.controls.manualNodeCtrl.nodeClickFunction = function(node, mouseEvent) {
+    //console.log("Change to manual");
+    //console.log(node);
+    node.changeType(ts.list.nodeTypes.MANUAL);
+};
+
+ts.controls.manualNodeCtrl.polylineClickFunction = function(node, polyMouseEvent) {
+    console.log("Change to manual");
+    console.log(node);
+    console.log(polyMouseEvent);
+    if (polyMouseEvent.vertex != null) node.bisectNode(polyMouseEvent.vertex);
+    //node.changeType(ts.list.nodeTypes.MANUAL);
 };
 
 ts.controls.routeCtrl = Object.create(ts.control);
@@ -226,13 +268,34 @@ ts.controls.routeCtrl.installMapListeners = function () {
     });
 };
 
+ts.controls.routeCtrl.nodeClickFunction = function(node, mouseEvent) {
+    //console.log("Change to routed");
+    //console.log(node);
+    if (node.type === ts.list.nodeTypes.MANUAL) {
+        if (!window.confirm("Changing section to routed will trigger autorouting of this section, continue?")) {
+            return;
+        }
+    }
+    node.changeType(ts.list.nodeTypes.TOROUTE);
+};
+
 ts.controls.deleteNodeCtrl = Object.create(ts.control);
 
-// TODO: delete node with this callback
-ts.controls.deleteNodeCtrl.nodeClickFunction = function(node) {
-    console.log("Please delete"+node);
+// TODO: probably should not delete whole section of a manual node
+ts.controls.deleteNodeCtrl.nodeClickFunction = function(node, mouseEvent) {
+    console.log("Delete");
+    console.log(node);
+    console.log(mouseEvent);
     ts.pointList.deleteNode(node);
 }
+
+ts.controls.deleteNodeCtrl.polylineClickFunction = function(node, polyMouseEvent) {
+    console.log("Delete");
+    console.log(node);
+    console.log(polyMouseEvent);
+    if (polyMouseEvent.vertex != null) node.deleteVertex(polyMouseEvent.vertex);
+    //node.changeType(ts.list.nodeTypes.MANUAL);
+};
 
 ts.controls.deleteNodeCtrl.activate = function () {
     ts.main.setCursor('default');

@@ -6,6 +6,7 @@ ts.list = {}
 
 //TODO: auto-route TOROUTE, height lookup?
 // TODO: check handling of modify list while waiting height lookup
+// TODO: use an attribute as an indicator of whether the height lookup has succeeded for this pair of point, difficulty might come when loading/saving
 
 /**
  * This file contains implementation of the data structures used for TrackScribe.
@@ -157,14 +158,15 @@ ts.list.node.activateListeners = function()  {
  * these parameters.
  * 
  * @param {integer} index index of point in path that was edited or null
+ * @param {type} element
  * 
  */
-ts.list.node.pathListenerCallbackFunction = function(index) {
+ts.list.node.pathListenerCallbackFunction = function(index, element) {
     ts.assert(index==null || typeof(index)==='number');
-    console.log("callback"+index);
-    if (index!=null) ts.assert(this.path.getAt(index).children == null); 
-        // this checks that the point at index is already invalid
     
+    // this.path.getAt(index).children = null; // invalidate children at this index
+    // unneeded: set_at & insert_at: point at index is new point
+    //           remove_at: new point at index is valid
     this.lengthValid = false; // forces all points in node to recalc length
         // propagated downstream by list update
     
@@ -174,7 +176,8 @@ ts.list.node.pathListenerCallbackFunction = function(index) {
         // child points for previous point (index - 1) are no longer valid
         var prevLatLng = this.path.getAt(index-1);
         if (prevLatLng.children!=null) {
-            prevLatLng.children.length = 0;
+            prevLatLng.children = null;
+            prevLatLng.height = null; // invalidate to force relookup and non-plotting
             prevLatLng.heightValid = false; // true if heights of this point and to next is valid
         }
     }
@@ -192,9 +195,9 @@ ts.list.node.pathListenerCallbackFunction = function(index) {
 ts.list.node.addPathListeners = function() {
     var that = this;
     
-    function pathListenerCallback(index) {
+    function pathListenerCallback(index, element) {
      if (!that.listenersActive) return;
-       that.pathListenerCallbackFunction(index);
+       that.pathListenerCallbackFunction(index, element);
     }
     
     google.maps.event.addListener(this.path, "dragend", function() {
@@ -218,7 +221,18 @@ ts.list.node.addMarkerListeners = function() {
         that.updateTerminus(latLng);
         });
     google.maps.event.addListener(this.marker, 'click', function(mouseEvent) {
-        ts.controls.callNodeClickFunction(that);
+        ts.controls.callNodeClickFunction(that, mouseEvent);
+        });        
+};
+
+/**
+ * Add listeners for polyline for this node.
+ * 
+ */
+ts.list.node.addPolylineListeners = function() {
+    var that = this;
+    google.maps.event.addListener(this.polyline, 'click', function(polyMouseEvent) {
+        ts.controls.callPolylineClickFunction(that, polyMouseEvent);
         });        
 };
 
@@ -255,7 +269,6 @@ ts.list.node.setPrevious = function(prevNode) {
         // changing previous rather than adding a new one
         this.previous = prevNode;
         prevNode.getTerminus().height = null;
-        prevNode.getTerminus().children = null; // invalidate previous point
         this.path.setAt(0,prevNode.getTerminus());
     } else {
         ts.assert(this.path.getLength()===0);
@@ -486,6 +499,7 @@ ts.list.node.updateOverlays = function() {
         this.polyline.setOptions(polylineOptions);
     } else {
         this.polyline = new google.maps.Polyline(polylineOptions);
+        this.addPolylineListeners();
     }
     if (this.marker) {
         this.marker.setOptions(markerOptions);
@@ -524,13 +538,13 @@ ts.list.node.update = function(updateLength, updateHeightExtents) {
         var curPointLatLng = this.path.getAt(i);
         
         if (updateLength) {
-            console.log("Point "+i+" was "+curPointCumulLength);
+            //console.log("Point "+i+" was "+curPointCumulLength);
             if (lastPointLatLng) {
                 // find length from previous, add to cumul total for path
                 curPointCumulLength += ts.computeDistBtw(lastPointLatLng, curPointLatLng);
             }
             curPointLatLng.cumulLength = curPointCumulLength;
-            console.log("is now "+curPointCumulLength);
+            //console.log("is now "+curPointCumulLength);
             
             var lastFloorKm = Math.floor(lastPointCumulLength/markerEvery);
             var curFloorKm = Math.floor(curPointCumulLength/markerEvery);
@@ -584,6 +598,104 @@ ts.list.node.update = function(updateLength, updateHeightExtents) {
     
     this.lengthValid = true;
 
+};
+
+ts.list.node.changeType = function(type) {
+    if (type === this.type) return;
+    if (type === ts.list.nodeTypes.TOROUTE && this.type === ts.list.nodeTypes.ROUTED) return;
+    if (type === ts.list.nodeTypes.MANUAL && this.type === ts.list.nodeTypes.ROUTED) {
+        this.type = type;
+        this.updateOverlays();
+    } else if (type === ts.list.nodeTypes.TOROUTE && this.type === ts.list.nodeTypes.MANUAL) {
+        this.type = ts.list.nodeTypes.TOROUTE;
+        this.reroute();
+    } else {
+        ts.assert(false,"Trying to do perform an invalid node type change!");
+    }
+}
+
+ts.list.node.deleteVertex = function(pointIndex) {
+    this.path.removeAt(pointIndex);
+};
+
+/**
+ * Divide this node into two nodes at pointIndex
+ * 
+ * @param {type} pointIndex
+ * @returns {undefined}
+ */
+ts.list.node.bisectNode = function(pointIndex) {
+    if (pointIndex==0 || pointIndex==this.path.getLength()-1) return; // can't bisect first point or terminus
+    if (this.type!=ts.list.nodeTypes.MANUAL) ts.assert("Trying to bisect unsupported node type");
+    
+    // deactivate update until bisect complete
+    this.owner.pauseUpdate();
+    this.deactivateListeners();
+    
+    // pop points after bisection point, and store in a stack to be used later
+    var storedPointStack = new google.maps.MVCArray();
+    while (pointIndex<this.path.getLength()-1)
+        storedPointStack.push(this.path.pop());
+    
+    // create a new node, and link to the list properly
+    var newNode = Object.create(ts.list.node);
+    newNode.initialize(this.type);
+    
+    if (this.next) {
+        this.next.previous = newNode;
+        newNode.next = this.next;
+    }
+    else this.owner.tail = newNode;
+    
+    
+    this.next = newNode;
+    newNode.setPrevious(this);
+    while (storedPointStack.getLength()>0)
+        newNode.path.push(storedPointStack.pop());
+    
+    // activate everything
+    this.activateListeners();
+    newNode.activateListeners();
+    this.updateOverlays();
+    newNode.updateOverlays();
+    
+    this.owner.resumeUpdate();
+};
+
+ts.list.node.combineWithNext = function() {
+    if (this.next==null) return; // can't combine if no next!
+    if ((this.type!=ts.list.nodeTypes.MANUAL || this.type!=ts.list.nodeTypes.ROUTED) &&
+        (this.next.type!=ts.list.nodeTypes.MANUAL || this.next.type!=ts.list.nodeTypes.ROUTED))
+        ts.assert("Trying to combine unsupported node types");
+    
+    // deactivate update until combine complete
+    this.owner.pauseUpdate();
+    this.deactivateListeners();
+    this.next.deactivateListeners();
+    
+    // move points from next node to this
+    // don't move first point as this is shared with original terminus current node
+    while (this.next.path.getLength()>1)
+        this.path.push(this.next.path.removeAt(1));
+    
+    if (this.next.type==ts.list.nodeTypes.ROUTED) this.type = this.next.type;
+        // propagate routed type to this node if needed
+    
+    // fix linked list
+    var oldNext = this.next;
+    this.next = oldNext.next;
+    if (this.next==null) this.owner.tail = this;
+    else this.next.previous = this; // shared terminus/first point will be fine as these transfered across
+    
+    oldNext.clear();
+
+    // activate everything
+    this.activateListeners();
+    this.updateOverlays();
+    
+    this.owner.resumeUpdate();
+    this.reroute();
+    
 };
 
 /**
@@ -716,7 +828,8 @@ ts.pointList.deleteNode = function(node) {
         return;
     }
     if (node==this.head) {
-        // ug special handling if deleting home node
+        // TODO: ug special handling if deleting home node
+        // need to make new home yada yada
         window.alert("Deleting home node not implemented, please drag it instead.");
         return;
     }

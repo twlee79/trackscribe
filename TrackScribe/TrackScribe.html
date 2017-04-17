@@ -52,23 +52,23 @@ body {
 				<img src="handdrag.png" class="controlButton" alt="Drag tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="manualPointTool"
-				title="Manually add points to path">
+				title="Manually add points to path. Click end of existing section to combine with next section.">
 				<img src="point2point.png" class="controlButton" alt="Manual point tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="manualNodeTool"
-				title="Manually add a new step">
+				title="Manually add a new section. Click a point to convert to section, or auto-routed section to convert to manual routed section.">
 				<img src="point2node.png" class="controlButton" alt="Manual node tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="routeTool"
-				title="Auto-route path to point">
+				title="Add a new section auto-routed to point. Click end of existing manual section to convert to auto-routed.">
 				<img src="route.png" class="controlButton" alt="Routed node tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="deleteTool"
-				title="Delete a node, click tool again to delete last node">
+				title="Delete a point or section. Click tool again to delete last section.">
 				<img src="deletenode.png" class="controlButton" alt="Delete tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="heightTool"
-				title="Lookup height of current location. Double-click to lookup elevation of path.">
+				title="Lookup height of current location. Click too again to lookup elevation of path.">
 				<img src="height.png" class="controlButton" alt="Height tool">
 			</div>
 			<div class="controlElement controlElementInactive" id="loadTool" style="padding:0ex;"
@@ -84,10 +84,6 @@ body {
                                     <img class="controlPaddingOnly controlButton" src="savetrack.png" alt="Save file tool">
                                 </button>
 			</div>
-            <div id="options" class="controlElement controlElementBasic" >
-                <input type="radio" name="TravelMode" value="walking">Walking
-                <input type="radio" name="TravelMode" value="cycling">Cycling
-            </div>
                 </div>
 	</div>
 	
@@ -115,9 +111,6 @@ body {
 		</div>
 	</div>
         
-	<div id="dummyDiv3" style="display:none">
-        </div>
-	
 	<div class="controlElement controlElementActive" id="dummyActiveElement" style="display:none"></div>
 </body>
 </html>
