@@ -133,14 +133,14 @@ ts.dem.processSegmentQueue = function() {
                     console.log(e.message);
                 }
                 ts.pointList.update();
+                ts.controls.infoCtrl.updateElevationStatus("");
+                ts.controls.infoCtrl.updateElevationInfo("Elevation source: Interpolated NZ TopoMaps from NZLookDEMUp Google AppEngine Server");
+                that.processSegmentQueue(); // lookup height of next segment in queue
             } else {
-                ts.controls.infoCtrl.updateElevationStatus("Elevation lookup error:"+lookupStaatus.details);
-                ts.warning(lookupStatus.details);
+                ts.controls.infoCtrl.updateElevationStatus("Elevation lookup error: "+status);
+                //ts.warning(status);
             }
             that.pendingDEMLookup = false;
-            ts.controls.infoCtrl.updateElevationStatus("");
-            ts.controls.infoCtrl.updateElevationInfo("Elevation source: Interpolated NZ TopoMaps from NZLookDEMUp Google AppEngine Server");
-            that.processSegmentQueue(); // lookup height of next segment in queue
         });
     };
 };

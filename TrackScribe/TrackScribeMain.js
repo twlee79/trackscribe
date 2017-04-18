@@ -21,7 +21,7 @@
 
 var ts = ts || {};
 
-ts.titleString = "TrackScribe v1.0 by Tet Woo Lee";
+ts.titleString = "TrackScribe v1.0.1 by Tet Woo Lee";
 
 // Disable business pois
 ts.mapStyles = [
