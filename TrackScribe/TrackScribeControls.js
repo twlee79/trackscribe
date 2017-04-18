@@ -412,23 +412,27 @@ ts.controls.infoCtrl.elevationInfo = "";
 ts.controls.infoCtrl.elevationStatus = "";
 
 ts.controls.infoCtrl.update = function() {
-  this.setHTML("<span style=\"font-weight:bold\">"+ts.titleString+".</span> "+this.routingInfo+". "+this.elevationStatus+" "+this.elevationInfo);  
-  ts.controls.elevationStatusCtrl.setHTML(this.elevationStatus);
+    var theString = "<span style=\"font-weight:bold\">"+ts.titleString+".</span> ";
+    if (this.routingInfo) theString+=this.routingInfo+". ";
+    if (this.elevationStatus) theString+=this.elevationStatus+" ";
+    if (this.elevationInfo) theString+=this.elevationInfo
+    this.setHTML(theString);  
+    ts.controls.elevationStatusCtrl.setHTML(this.elevationStatus);
 };
 
 ts.controls.infoCtrl.updateRoutingInfo = function(newRoutingInfo) {
-  this.routingInfo = newRoutingInfo;
-  this.update();
+    this.routingInfo = newRoutingInfo;
+    this.update();
 };
 
 ts.controls.infoCtrl.updateElevationInfo = function(newElevationInfo) {
-  this.elevationInfo = newElevationInfo;
-  this.update();
+    this.elevationInfo = newElevationInfo;
+    this.update();
 };
 
 ts.controls.infoCtrl.updateElevationStatus = function(newElevationStatus) {
-  this.elevationStatus = newElevationStatus;
-  this.update();
+    this.elevationStatus = newElevationStatus;
+    this.update();
 };
 
 ts.controls.elevationStatusCtrl = Object.create(ts.controls.statusCtrl);
